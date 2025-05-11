@@ -1,0 +1,35 @@
+{
+  "name": "com.barmetler.roadsystem",
+  "version": "2.1.0",
+  "displayName": "MB Road System",
+  "dependencies": {
+    "com.unity.burst": "1.4.5",
+    "com.unity.collections": "0.15.0-preview.21",
+    "com.unity.mathematics": "1.2.6"
+  },
+  "description": "Create RoadSystems using Bezier Curves that support Path Finding",
+  "hideInEditor": false,
+  "unity": "2020.1",
+  "unityRelease": "1f1",
+  "keywords": [
+    "road",
+    "roads",
+    "road system",
+    "path finding",
+    "intersection",
+    "intersections"
+  ],
+  "author": {
+    "name": "Maxi Barmetler",
+    "email": "maxi.barmetler@gmail.com",
+    "url": "https://www.barmetler.com"
+  },
+  "type": "tool",
+  "samples": [
+    {
+      "displayName": "Roads and Intersections",
+      "description": "Includes Meshes, Prefabs, and Materials",
+      "path": "Samples~/RoadSystem"
+    }
+  ]
+}

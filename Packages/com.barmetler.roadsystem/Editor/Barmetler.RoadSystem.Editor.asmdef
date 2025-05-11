@@ -1,0 +1,26 @@
+{
+  "name": "Barmetler.RoadSystem.Editor",
+  "rootNamespace": "Barmetler.RoadSystem",
+  "references": [
+    "GUID:13bb748a4cdc23745900902b3024379d",
+    "GUID:d8b63aba1907145bea998dd612889d6b",
+    "GUID:21d1eb854b91ade49bc69a263d12bee2"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [
+    {
+      "name": "com.unity.splines",
+      "expression": "2.0",
+      "define": "COM_UNITY_SPLINES"
+    }
+  ],
+  "noEngineReferences": false
+}
