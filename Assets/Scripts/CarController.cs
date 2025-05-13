@@ -18,7 +18,11 @@ public class CarController : MonoBehaviour
     void FixedUpdate()
     {
         // un demo simplu: mașina înainte continuu
-        rb.AddForce(transform.forward * acceleration * Time.fixedDeltaTime);
+        // seteaza limita de viteza la 40 m/s
+        if (rb.velocity.magnitude < 40f)
+        {
+            rb.AddForce(transform.forward * acceleration * Time.fixedDeltaTime);
+        }
     }
 }
 
