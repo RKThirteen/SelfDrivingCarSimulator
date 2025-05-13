@@ -27,7 +27,7 @@ public class CarAI : MonoBehaviour
     public float waypointReachDistance = 1f;
     private Transform target; // Target for pathfinding
     private TargetSelector selector;
-    // Start is called before the first frame update
+    private TrafficLight currentTrafficLight;
     private Rigidbody rb;
     private GridManager gridManager;
     public void TransitionToState(CarState newState)
@@ -91,7 +91,26 @@ public class CarAI : MonoBehaviour
             TransitionToState(CarState.Pathfind);
         }
     }
-     void Drive()
+
+    public void EnterTrafficZone(TrafficLight light)
+    {
+        Debug.Log("Entering traffic zone with light: " + light.name);
+        currentTrafficLight = light;
+
+        if (light.currentState == LightState.Red)
+        {
+            TransitionToState(CarState.Stop);
+        }
+    }
+
+    public void ExitTrafficZone()
+    {
+        Debug.Log("Exiting traffic zone");
+        currentTrafficLight = null;
+        TransitionToState(CarState.Drive);
+    }
+
+    void Drive()
     {   
         if (waypoints == null)
         {
@@ -150,7 +169,7 @@ public class CarAI : MonoBehaviour
         rb.velocity = Vector3.zero;
         rb.angularVelocity = Vector3.zero;
 
-        if (!trafficLightRed)
+        if (currentTrafficLight != null && currentTrafficLight.currentState == LightState.Green)
         {
             TransitionToState(CarState.Drive);
         }

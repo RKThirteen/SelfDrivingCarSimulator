@@ -1,18 +1,25 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 public class TrafficLightZone : MonoBehaviour
 {
-    // Start is called before the first frame update
-    void Start()
+    public TrafficLight trafficLight;
+
+    void OnTriggerEnter(Collider other)
     {
-        
+        // Urcăm în ierarhie să căutăm CarAI
+        CarAI ai = other.GetComponentInParent<CarAI>();
+        if (ai != null && trafficLight != null)
+        {
+            ai.EnterTrafficZone(trafficLight);
+        }
     }
 
-    // Update is called once per frame
-    void Update()
+    void OnTriggerExit(Collider other)
     {
-        
+        CarAI ai = other.GetComponentInParent<CarAI>();
+        if (ai != null)
+        {
+            ai.ExitTrafficZone();
+        }
     }
 }
