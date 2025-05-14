@@ -179,6 +179,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bbd9233d969d6fc41986006524ad3103, type: 3}
+--- !u!146 &223401016 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 3145262460232535540, guid: 133308cdb8794744caaef026bde9e1f0, type: 3}
+  m_PrefabInstance: {fileID: 1250411406}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &234935299 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 391397315203931578, guid: c4cad50aa03bbca42938fe318344950b, type: 3}
@@ -647,6 +652,89 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5514ccdbfe615ccbb97289f78ed8be34, type: 3}
+--- !u!1 &690563234
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 690563237}
+  - component: {fileID: 690563236}
+  - component: {fileID: 690563235}
+  m_Layer: 0
+  m_Name: TargetNode (5)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!23 &690563235
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 690563234}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 10303, guid: 0000000000000000f000000000000000, type: 0}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &690563236
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 690563234}
+  m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!4 &690563237
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 690563234}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -3.29, y: 0, z: 81.51}
+  m_LocalScale: {x: 1.0434909, y: 1.0434909, z: 0.9176837}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &698717378
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1450,8 +1538,29 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f2bd056580d28584686ef19bc4ca85bb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  acceleration: 500
-  steering: 30
+  rb: {fileID: 0}
+  wheelColliders: []
+  wheelMeshes: []
+  maxMotorTorque: 1500
+  maxBrakeTorque: 3000
+  torqueCurve:
+    serializedVersion: 2
+    m_Curve: []
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  maxRPM: 6000
+  maxSteerAngle: 30
+  ackermannFactor: 0.25
+  suspensionSpring: 35000
+  suspensionDamper: 4500
+  suspensionTargetPos: 0.5
+  forwardStiffness: 1.5
+  sidewaysStiffness: 1.8
+  dragCoefficient: 0.4257
+  frontalArea: 2.2
+  airDensity: 1.225
+  downforceCoefficient: 10
 --- !u!1 &1060972208
 GameObject:
   m_ObjectHideFlags: 0
@@ -1859,6 +1968,21 @@ SphereCollider:
   serializedVersion: 3
   m_Radius: 0.3706762
   m_Center: {x: 0.007815028, y: 0, z: 0}
+--- !u!4 &1399390380 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3570975274930632670, guid: c4cad50aa03bbca42938fe318344950b, type: 3}
+  m_PrefabInstance: {fileID: 1932493173}
+  m_PrefabAsset: {fileID: 0}
+--- !u!146 &1463698092 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 2716459193614891142, guid: 133308cdb8794744caaef026bde9e1f0, type: 3}
+  m_PrefabInstance: {fileID: 1250411406}
+  m_PrefabAsset: {fileID: 0}
+--- !u!4 &1501271897 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 3794951908810334882, guid: 133308cdb8794744caaef026bde9e1f0, type: 3}
+  m_PrefabInstance: {fileID: 1250411406}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1545445053
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1942,6 +2066,11 @@ SphereCollider:
   serializedVersion: 3
   m_Radius: 0.37067616
   m_Center: {x: -0.0078150425, y: 0, z: 0}
+--- !u!4 &1547830912 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 4837801160553823938, guid: c4cad50aa03bbca42938fe318344950b, type: 3}
+  m_PrefabInstance: {fileID: 1932493173}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1554743877
 GameObject:
   m_ObjectHideFlags: 0
@@ -2025,6 +2154,16 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1554743877}
   m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!146 &1666793476 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 1057494946909100755, guid: 133308cdb8794744caaef026bde9e1f0, type: 3}
+  m_PrefabInstance: {fileID: 1250411406}
+  m_PrefabAsset: {fileID: 0}
+--- !u!146 &1673320013 stripped
+WheelCollider:
+  m_CorrespondingSourceObject: {fileID: 4795950753765878369, guid: 133308cdb8794744caaef026bde9e1f0, type: 3}
+  m_PrefabInstance: {fileID: 1250411406}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1716024509
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2567,6 +2706,11 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bbd9233d969d6fc41986006524ad3103, type: 3}
+--- !u!4 &1966394261 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 28636839611146925, guid: 133308cdb8794744caaef026bde9e1f0, type: 3}
+  m_PrefabInstance: {fileID: 1250411406}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &2050175545
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2636,13 +2780,42 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2108881306}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f2bd056580d28584686ef19bc4ca85bb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  acceleration: 500
-  steering: 0
+  rb: {fileID: 0}
+  wheelColliders:
+  - {fileID: 1463698092}
+  - {fileID: 1673320013}
+  - {fileID: 223401016}
+  - {fileID: 1666793476}
+  wheelMeshes:
+  - {fileID: 1501271897}
+  - {fileID: 1399390380}
+  - {fileID: 1547830912}
+  - {fileID: 1966394261}
+  maxMotorTorque: 3000
+  maxBrakeTorque: 3000
+  torqueCurve:
+    serializedVersion: 2
+    m_Curve: []
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  maxRPM: 6000
+  maxSteerAngle: 30
+  ackermannFactor: 0.25
+  suspensionSpring: 25000
+  suspensionDamper: 3000
+  suspensionTargetPos: 0.5
+  forwardStiffness: 1.5
+  sidewaysStiffness: 1.8
+  dragCoefficient: 0.3
+  frontalArea: 2.2
+  airDensity: 1.225
+  downforceCoefficient: 10
 --- !u!54 &2108881308
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -2651,7 +2824,7 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2108881306}
   serializedVersion: 4
-  m_Mass: 0.5
+  m_Mass: 1500
   m_Drag: 0
   m_AngularDrag: 0.05
   m_CenterOfMass: {x: 0, y: 0, z: 0}
@@ -2688,14 +2861,24 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   currentState: 0
-  obstacleDetectionRange: 100
-  obstacleLayer:
+  gridManager: {fileID: 0}
+  targetSelector: {fileID: 0}
+  waypointRadius: 2
+  recalculateDistance: 5
+  desiredSpeed: 12
+  maxSteerAngle: 25
+  steerResponsiveness: 0.8
+  speedAnticipation: 1.5
+  brakeDistanceMultiplier: 0.8
+  rayAngles:
+  - -30
+  - 0
+  - 30
+  rayRange: 8
+  obstacleMask:
     serializedVersion: 2
-    m_Bits: 64
-  trafficLightRed: 0
-  speed: 5
-  turnSpeed: 5
-  waypointReachDistance: 1
+    m_Bits: 0
+  avoidanceForce: 2
 --- !u!1 &2120388204
 GameObject:
   m_ObjectHideFlags: 0
@@ -2973,6 +3156,7 @@ SceneRoots:
   - {fileID: 303832887}
   - {fileID: 1554743878}
   - {fileID: 1954111542}
+  - {fileID: 690563237}
   - {fileID: 476426356}
   - {fileID: 271779881}
   - {fileID: 698717378}

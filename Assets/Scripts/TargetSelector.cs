@@ -10,6 +10,15 @@ public class TargetSelector : MonoBehaviour
 
     public CarAI carAI;
 
+    public void SetCarAIReference(CarAI ai)
+    {
+        carAI = ai;
+        if (carAI != null && CurrentTarget != null)
+        {
+            carAI.TransitionToState(CarAI.CarState.Pathfind);
+        }
+    }
+
     public void NextTarget()
     {
         if (targets.Count == 0) return;
@@ -19,7 +28,7 @@ public class TargetSelector : MonoBehaviour
 
         if (carAI != null)
         {
-            carAI.TransitionToState(CarAI.CarState.Pathfind); // recalculare traseu
+            carAI.TransitionToState(CarAI.CarState.Pathfind);
         }
     }
 }

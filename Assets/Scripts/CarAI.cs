@@ -1,218 +1,162 @@
-using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+[RequireComponent(typeof(CarController))]
 public class CarAI : MonoBehaviour
 {
-    public enum CarState
-    {
-        Idle,
-        Drive,
-        AvoidObstacle,
-        Stop,
-        Pathfind
-    }
-    public CarState currentState = CarState.Idle;
+    public enum CarState { Idle, Pathfind, Drive, AvoidObstacle, Stop }
+    public CarState currentState = CarState.Pathfind;
 
-    [Header("Detection")]
-    public float obstacleDetectionRange = 5f;
-    public LayerMask obstacleLayer;
-    public bool trafficLightRed = false;
-
-    [Header("Path Following")]
-    private List<Transform> waypoints;
-    private int currentWaypoint = 0;
-    public float speed = 5f;
-    public float turnSpeed = 5f;
-    public float waypointReachDistance = 1f;
-    private Transform target; // Target for pathfinding
-    private TargetSelector selector;
-    private TrafficLight currentTrafficLight;
+    [Header("Core References")]
+    public GridManager gridManager;
+    public TargetSelector targetSelector;
+    private CarController controller;
     private Rigidbody rb;
-    private GridManager gridManager;
-    public void TransitionToState(CarState newState)
-    {
-        currentState = newState;
-        Debug.Log("Transitioning to state: " + newState);
-    }
 
-    bool ObstacleDetected()
-    {
-        RaycastHit hit;
-        Vector3 origin = transform.position + Vector3.up * 0.5f;
+    [Header("Pathfinding")]
+    public float waypointRadius = 2f;
+    public float recalculateDistance = 5f;
+    private List<Transform> waypoints = new List<Transform>();
+    private int currentWaypoint = 0;
 
-        Debug.DrawRay(origin, transform.forward * obstacleDetectionRange, Color.red);
+    [Header("AI Parameters")]
+    public float desiredSpeed = 12f;
+    public float maxSteerAngle = 25f;
+    public float steerResponsiveness = 0.8f;
+    public float speedAnticipation = 1.5f;
+    public float brakeDistanceMultiplier = 0.8f;
 
-        if (Physics.Raycast(origin, transform.forward, out hit, obstacleDetectionRange, obstacleLayer))
-        {
-            Debug.Log("Detected obstacle: " + hit.collider.gameObject.name);
-            return true;
-        }
-
-        return false;
-    }
+    [Header("Obstacle Avoidance")]
+    public float[] rayAngles = { -30f, 0f, 30f };
+    public float rayRange = 8f;
+    public LayerMask obstacleMask;
+    public float avoidanceForce = 2f;
+    private Vector3 avoidanceVector;
 
     void Awake()
     {
-        gridManager = FindObjectOfType<GridManager>();
-        selector = FindObjectOfType<TargetSelector>();
-        if (gridManager == null )
-        {
-            Debug.LogError("GridManager not found in the scene.");
-        }
-        if (selector == null)
-        {
-            Debug.LogError("TargetSelector not found in the scene.");
-        }
-    }
-    void Start()
-    {
+        controller = GetComponent<CarController>();
         rb = GetComponent<Rigidbody>();
-        TransitionToState(CarState.Pathfind);
-        waypoints = new List<Transform>();
+        InitializeReferences();
     }
-    void Idle()
+
+    void InitializeReferences()
     {
-        if (waypoints != null)
+        if (gridManager == null)
+            gridManager = FindObjectOfType<GridManager>();
+
+        if (targetSelector == null)
+            targetSelector = FindObjectOfType<TargetSelector>();
+    }
+
+    void Update()
+    {
+        switch (currentState)
         {
-            foreach (Transform wp in waypoints)
-            {
-                if (wp != null) Destroy(wp.gameObject);
-            }
-            waypoints.Clear();
+            case CarState.Idle: UpdateIdle(); break;
+            case CarState.Pathfind: UpdatePathfinding(); break;
+            case CarState.Drive: UpdateDriving(); break;
+            case CarState.AvoidObstacle: UpdateAvoidance(); break;
+            case CarState.Stop: UpdateStop(); break;
         }
-        else
-        {
-            waypoints = new List<Transform>();
-        }
-        // Așteaptă să primească comenzi
-        if (Input.GetKeyDown(KeyCode.KeypadEnter))
+    }
+
+    void UpdateIdle()
+    {
+        controller.SetThrottle(0f);
+        controller.SetSteer(0f);
+
+        if (targetSelector.CurrentTarget != null)
+            TransitionToState(CarState.Pathfind);
+    }
+
+    void UpdatePathfinding()
+    {
+        CalculatePath();
+    }
+
+    void UpdateDriving()
+    {
+        if (waypoints.Count == 0 || currentWaypoint >= waypoints.Count)
         {
             TransitionToState(CarState.Pathfind);
-        }
-    }
-
-    public void EnterTrafficZone(TrafficLight light)
-    {
-        Debug.Log("Entering traffic zone with light: " + light.name);
-        currentTrafficLight = light;
-
-        if (light.currentState == LightState.Red)
-        {
-            TransitionToState(CarState.Stop);
-        }
-    }
-
-    public void ExitTrafficZone()
-    {
-        Debug.Log("Exiting traffic zone");
-        currentTrafficLight = null;
-        TransitionToState(CarState.Drive);
-    }
-
-    void Drive()
-    {   
-        if (waypoints == null)
-        {
-            Debug.LogWarning("Waypoints list is null in Drive().");
-            return;
-        }
-        if (ObstacleDetected())
-        {
-            TransitionToState(CarState.AvoidObstacle);
             return;
         }
 
-        if (trafficLightRed)
-        {
-            TransitionToState(CarState.Stop);
-            return;
-        }
+        Vector3 targetPos = waypoints[currentWaypoint].position;
+        Vector3 localTarget = transform.InverseTransformPoint(targetPos);
 
-        if (waypoints.Count == 0 || waypoints==null) return;
+        float steerDirection = localTarget.x / localTarget.magnitude;
+        float speedFactor = Mathf.Clamp01(rb.velocity.magnitude / desiredSpeed);
+        float adjustedSteer = steerDirection * maxSteerAngle * steerResponsiveness * (1 - speedFactor * 0.4f);
 
-        Vector3 direction = (waypoints[currentWaypoint].position - transform.position).normalized;
-        Quaternion targetRotation = Quaternion.LookRotation(direction);
-        transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, turnSpeed * Time.deltaTime);
-        rb.velocity = transform.forward * speed;
+        float distanceToWaypoint = Vector3.Distance(transform.position, targetPos);
+        float anticipatedSpeed = rb.velocity.magnitude + (controller.GetAcceleration().magnitude * speedAnticipation);
+        float throttleInput = (anticipatedSpeed < desiredSpeed) ? 1f : 0f;
 
-        if (Vector3.Distance(transform.position, waypoints[currentWaypoint].position) < waypointReachDistance)
-        {
+        float brakeInput = 0f;
+        if (distanceToWaypoint < (desiredSpeed * brakeDistanceMultiplier))
+            brakeInput = Mathf.Clamp01(1 - (distanceToWaypoint / (desiredSpeed * brakeDistanceMultiplier)));
+
+        controller.SetSteer(Mathf.Clamp(adjustedSteer / maxSteerAngle, -1f, 1f));
+        controller.SetThrottle(throttleInput * (1 - brakeInput));
+        controller.SetBrake(brakeInput);
+
+        if (distanceToWaypoint < waypointRadius)
             currentWaypoint++;
-            if (currentWaypoint >= waypoints.Count)
-            {
-                // Gata cu path-ul actual → trecem la următorul target
-                if (selector != null)
-                {
-                    selector.NextTarget(); // schimba targetul
-                }
 
-                TransitionToState(CarState.Pathfind); // recalculează path-ul spre noul target
-            }
-        }
+        if (DetectObstacle())
+            TransitionToState(CarState.AvoidObstacle);
     }
 
-    void AvoidObstacle()
+    void UpdateAvoidance()
     {
-        Quaternion turn = Quaternion.Euler(0, 45, 0); // virează ușor la dreapta
-        transform.rotation = Quaternion.Slerp(transform.rotation, transform.rotation * turn, turnSpeed * Time.deltaTime);
-        rb.velocity = transform.forward * speed;
+        Vector3 avoidanceSteer = CalculateAvoidance();
+        controller.SetSteer(avoidanceSteer.x);
+        controller.SetThrottle(0.7f);
 
-        if (!ObstacleDetected())
-        {
+        if (!DetectObstacle())
             TransitionToState(CarState.Drive);
-        }
     }
 
-    void StopAtSignal()
+    void UpdateStop()
     {
-        rb.velocity = Vector3.zero;
-        rb.angularVelocity = Vector3.zero;
+        controller.SetThrottle(0f);
+        controller.SetBrake(1f);
 
-        if (currentTrafficLight != null && currentTrafficLight.currentState == LightState.Green)
-        {
+        if (CheckClearPath())
             TransitionToState(CarState.Drive);
-        }
     }
 
-    int GetDistance(Node a, Node b)
+    bool DetectObstacle()
     {
-        int dstX = Mathf.Abs(a.gridX - b.gridX);
-        int dstY = Mathf.Abs(a.gridY - b.gridY);
-        return 10 * (dstX + dstY); // cost constant, simplificat
+        foreach (float angle in rayAngles)
+        {
+            Quaternion rotation = Quaternion.AngleAxis(angle, transform.up);
+            if (Physics.Raycast(transform.position + Vector3.up * 0.5f, rotation * transform.forward, rayRange, obstacleMask))
+                return true;
+        }
+        return false;
     }
 
-    void RetracePath(Node startNode, Node endNode)
+    Vector3 CalculateAvoidance()
     {
-        Debug.Log("Retracing path from " + startNode.gridX + "," + startNode.gridY + " to " + endNode.gridX + "," + endNode.gridY);
-        if (startNode == null || endNode == null)
+        Vector3 totalForce = Vector3.zero;
+
+        foreach (float angle in rayAngles)
         {
-            Debug.LogWarning("Start or end node is null.");
-            return;
-        }
-        if (endNode.parent == null)
-        {
-            Debug.LogWarning("End node has no parent. Cannot retrace path.");
-            return;
+            Quaternion rotation = Quaternion.AngleAxis(angle, transform.up);
+            Ray ray = new Ray(transform.position + Vector3.up * 0.5f, rotation * transform.forward);
+
+            if (Physics.Raycast(ray, out RaycastHit hit, rayRange, obstacleMask))
+                totalForce += rotation * Vector3.right * avoidanceForce * (1 - (hit.distance / rayRange));
         }
 
-        // Asigurare că lista e creată
-        if (waypoints != null)
-        {
-            foreach (Transform wp in waypoints)
-            {
-                if (wp != null) Destroy(wp.gameObject);
-            }
-            waypoints.Clear();
-        }
-        else
-        {
-            waypoints = new List<Transform>();
-        }
-        foreach (Transform wp in waypoints)
-        {
-            if (wp != null) Destroy(wp.gameObject);
-        }
+        return transform.InverseTransformDirection(totalForce.normalized);
+    }
+    // Adaugă aceste metode în CarAI.cs
+    private void RetracePath(Node startNode, Node endNode)
+    {
         List<Node> path = new List<Node>();
         Node currentNode = endNode;
 
@@ -220,33 +164,61 @@ public class CarAI : MonoBehaviour
         {
             path.Add(currentNode);
             currentNode = currentNode.parent;
+            if (currentNode == null) // Prevenire buclă infinită
+            {
+                Debug.LogError("Path retrace failed - null parent!");
+                return;
+            }
         }
         path.Reverse();
 
-        waypoints = new List<Transform>();
-        foreach (Node n in path)
+        // Distruge waypoint-urile vechi
+        foreach (Transform wp in waypoints)
+        {
+            if (wp != null) Destroy(wp.gameObject);
+        }
+        waypoints.Clear();
+
+        // Creează waypoint-uri noi
+        foreach (Node node in path)
         {
             GameObject wp = new GameObject("Waypoint");
-            wp.transform.position = n.worldPosition;
+            wp.transform.position = node.worldPosition;
             waypoints.Add(wp.transform);
-            Debug.DrawRay(n.worldPosition, Vector3.up * 2, Color.green, 5f);
         }
+    }
 
-        currentWaypoint = 0;
-        TransitionToState(CarState.Drive);
+    private int GetDistance(Node a, Node b)
+    {
+        // Distanța Manhattan pentru grid rectangular
+        int dstX = Mathf.Abs(a.gridX - b.gridX);
+        int dstY = Mathf.Abs(a.gridY - b.gridY);
+
+        // 10 = cost drept, 14 = cost diagonal (pentru mișcare pe diagonală)
+        return dstX > dstY ?
+            14 * dstY + 10 * (dstX - dstY) :
+            14 * dstX + 10 * (dstY - dstX);
     }
     void CalculatePath()
     {
-        if (selector == null || selector.CurrentTarget == null)
+        waypoints.Clear();
+        currentWaypoint = 0;
+
+        if (gridManager == null || targetSelector.CurrentTarget == null)
         {
-            Debug.LogWarning("No target available");
+            Debug.LogError("GridManager sau Target lipsă!");
             return;
         }
 
-        target = selector.CurrentTarget;
-
         Node startNode = gridManager.NodeFromWorldPoint(transform.position);
-        Node targetNode = gridManager.NodeFromWorldPoint(target.position);
+        Node targetNode = gridManager.NodeFromWorldPoint(targetSelector.CurrentTarget.position);
+
+        // Verifică dacă nodurile sunt valide
+        if (startNode == null || targetNode == null || !targetNode.walkable)
+        {
+            Debug.LogWarning("Noduri invalide!");
+            return;
+        }
 
         List<Node> openSet = new List<Node>();
         HashSet<Node> closedSet = new HashSet<Node>();
@@ -258,7 +230,7 @@ public class CarAI : MonoBehaviour
             for (int i = 1; i < openSet.Count; i++)
             {
                 if (openSet[i].fCost < currentNode.fCost ||
-                    openSet[i].fCost == currentNode.fCost && openSet[i].hCost < currentNode.hCost)
+                    (openSet[i].fCost == currentNode.fCost && openSet[i].hCost < currentNode.hCost))
                 {
                     currentNode = openSet[i];
                 }
@@ -269,15 +241,7 @@ public class CarAI : MonoBehaviour
 
             if (currentNode == targetNode)
             {
-                if (targetNode.parent != null)
-                {
-                    RetracePath(startNode, targetNode);
-                }
-                else
-                {
-                    Debug.LogWarning("No valid path to target found!");
-                    TransitionToState(CarState.Idle);
-                }
+                RetracePath(startNode, targetNode);
                 return;
             }
 
@@ -286,10 +250,10 @@ public class CarAI : MonoBehaviour
                 if (!neighbour.walkable || closedSet.Contains(neighbour))
                     continue;
 
-                int newCostToNeighbour = currentNode.gCost + GetDistance(currentNode, neighbour);
-                if (newCostToNeighbour < neighbour.gCost || !openSet.Contains(neighbour))
+                int newCost = currentNode.gCost + GetDistance(currentNode, neighbour);
+                if (newCost < neighbour.gCost || !openSet.Contains(neighbour))
                 {
-                    neighbour.gCost = newCostToNeighbour;
+                    neighbour.gCost = newCost;
                     neighbour.hCost = GetDistance(neighbour, targetNode);
                     neighbour.parent = currentNode;
 
@@ -300,34 +264,37 @@ public class CarAI : MonoBehaviour
         }
     }
 
-    void Update()
+    public void TransitionToState(CarState newState)
     {
-        if (Input.GetKeyDown(KeyCode.Space))
+        switch (newState)
         {
-            TransitionToState(CarState.Idle);
-        }
-        switch (currentState)
-        {
-            case CarState.Idle:
-                Idle();
-                break;
-
             case CarState.Drive:
-                Drive();
+                controller.SetBrake(0f);
                 break;
 
             case CarState.AvoidObstacle:
-                AvoidObstacle();
-                break;
-
-            case CarState.Stop:
-                StopAtSignal();
-                break;
-
-            case CarState.Pathfind:
-                CalculatePath();
+                avoidanceVector = CalculateAvoidance();
                 break;
         }
+        currentState = newState;
     }
 
+    bool CheckClearPath()
+    {
+        return !Physics.Raycast(transform.position, targetSelector.CurrentTarget.position - transform.position,
+            Vector3.Distance(transform.position, targetSelector.CurrentTarget.position), obstacleMask);
+    }
+
+    public void EnterTrafficZone() => TransitionToState(CarState.Stop);
+    public void ExitTrafficZone() => TransitionToState(CarState.Drive);
+
+    void OnDrawGizmos()
+    {
+        if (waypoints != null && waypoints.Count > 0)
+        {
+            Gizmos.color = Color.green;
+            foreach (Transform wp in waypoints)
+                Gizmos.DrawSphere(wp.position, 0.5f);
+        }
+    }
 }

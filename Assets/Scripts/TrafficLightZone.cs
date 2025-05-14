@@ -2,24 +2,21 @@ using UnityEngine;
 
 public class TrafficLightZone : MonoBehaviour
 {
-    public TrafficLight trafficLight;
-
-    void OnTriggerEnter(Collider other)
+    private void OnTriggerEnter(Collider other)
     {
-        // Urcăm în ierarhie să căutăm CarAI
-        CarAI ai = other.GetComponentInParent<CarAI>();
-        if (ai != null && trafficLight != null)
+        CarAI car = other.GetComponent<CarAI>();
+        if (car != null)
         {
-            ai.EnterTrafficZone(trafficLight);
+            car.EnterTrafficZone();
         }
     }
 
-    void OnTriggerExit(Collider other)
+    private void OnTriggerExit(Collider other)
     {
-        CarAI ai = other.GetComponentInParent<CarAI>();
-        if (ai != null)
+        CarAI car = other.GetComponent<CarAI>();
+        if (car != null)
         {
-            ai.ExitTrafficZone();
+            car.ExitTrafficZone();
         }
     }
 }
