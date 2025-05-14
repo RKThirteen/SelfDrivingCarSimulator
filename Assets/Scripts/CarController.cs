@@ -39,6 +39,14 @@ public class CarController : MonoBehaviour
     void Start()
     {
         rb = GetComponent<Rigidbody>();
+        if (torqueCurve == null || torqueCurve.length == 0)
+        {
+            torqueCurve = new AnimationCurve(
+                new Keyframe(0f, 1f),   // cuplu maxim la RPM mic
+                new Keyframe(0.5f, 1f), // constant în zona medie
+                new Keyframe(1f, 0.7f)  // scade puțin la maxim RPM
+            );
+        }
         rb.centerOfMass = new Vector3(0, -0.9f, 0);
 
         foreach (WheelCollider wheel in wheelColliders)
@@ -61,6 +69,12 @@ public class CarController : MonoBehaviour
 
     void FixedUpdate()
     {
+        
+        for (int i = 0; i < wheelColliders.Length; i++)
+        {
+            bool grounded = wheelColliders[i].GetGroundHit(out WheelHit hit);
+            Debug.Log($"Wheel {i}: Grounded = {grounded}, Hit force = {hit.force}");
+        }
         acceleration = (rb.velocity - lastVelocity) / Time.fixedDeltaTime;
         lastVelocity = rb.velocity;
 
@@ -70,6 +84,7 @@ public class CarController : MonoBehaviour
         ApplyAerodynamics();
         ApplyWeightTransfer();
         UpdateWheelMeshes();
+
     }
 
     public void SetThrottle(float t) => throttleInput = Mathf.Clamp(t, -1f, 1f);
@@ -88,10 +103,17 @@ public class CarController : MonoBehaviour
             wheelColliders[2].motorTorque = torque;
             wheelColliders[3].motorTorque = torque;
         }
+        // else
+        // {
+        //     if (Mathf.Abs(wheelRPM) < 1f || Mathf.Sign(wheelRPM) == Mathf.Sign(throttleInput))
+        //         ApplyBrake(maxBrakeTorque * 0.5f);
+        // }
         else
         {
-            ApplyBrake(maxBrakeTorque * 0.5f);
+            wheelColliders[2].motorTorque = 0f;
+            wheelColliders[3].motorTorque = 0f;
         }
+        //Debug.Log($"Throttle={throttleInput}, RPM={wheelRPM}, TorqueCurve={torqueCurve.Evaluate(normalizedRPM)}");
     }
 
     private void ApplyBrake(float brakeInput = 0f)

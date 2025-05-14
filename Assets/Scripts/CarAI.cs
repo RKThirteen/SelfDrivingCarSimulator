@@ -35,6 +35,7 @@ public class CarAI : MonoBehaviour
 
     void Awake()
     {
+        waypoints = new List<Transform>();
         controller = GetComponent<CarController>();
         rb = GetComponent<Rigidbody>();
         InitializeReferences();
@@ -103,7 +104,20 @@ public class CarAI : MonoBehaviour
         controller.SetBrake(brakeInput);
 
         if (distanceToWaypoint < waypointRadius)
+        {
             currentWaypoint++;
+            if (currentWaypoint >= waypoints.Count)
+            {
+                // Gata cu path-ul actual → trecem la următorul target
+                if (targetSelector != null)
+                {
+                    targetSelector.NextTarget(); // schimba targetul
+                }
+
+                TransitionToState(CarState.Pathfind); // recalculează path-ul spre noul target
+            }
+        }
+            
 
         if (DetectObstacle())
             TransitionToState(CarState.AvoidObstacle);
@@ -157,6 +171,35 @@ public class CarAI : MonoBehaviour
     // Adaugă aceste metode în CarAI.cs
     private void RetracePath(Node startNode, Node endNode)
     {
+        Debug.Log("Retracing path from " + startNode.gridX + "," + startNode.gridY + " to " + endNode.gridX + "," + endNode.gridY);
+        if (startNode == null || endNode == null)
+        {
+            Debug.LogWarning("Start or end node is null.");
+            return;
+        }
+        if (endNode.parent == null)
+        {
+            Debug.LogWarning("End node has no parent. Cannot retrace path.");
+            return;
+        }
+
+        // Asigurare că lista e creată
+        if (waypoints != null)
+        {
+            foreach (Transform wp in waypoints)
+            {
+                if (wp != null) Destroy(wp.gameObject);
+            }
+            waypoints.Clear();
+        }
+        else
+        {
+            waypoints = new List<Transform>();
+        }
+        foreach (Transform wp in waypoints)
+        {
+            if (wp != null) Destroy(wp.gameObject);
+        }
         List<Node> path = new List<Node>();
         Node currentNode = endNode;
 
@@ -185,7 +228,10 @@ public class CarAI : MonoBehaviour
             GameObject wp = new GameObject("Waypoint");
             wp.transform.position = node.worldPosition;
             waypoints.Add(wp.transform);
+            Debug.DrawRay(node.worldPosition, Vector3.up * 2, Color.green, 5f);
         }
+        currentWaypoint = 0;
+        TransitionToState(CarState.Drive);
     }
 
     private int GetDistance(Node a, Node b)
@@ -266,6 +312,7 @@ public class CarAI : MonoBehaviour
 
     public void TransitionToState(CarState newState)
     {
+        Debug.Log($"Transitioning from {currentState} to {newState}");
         switch (newState)
         {
             case CarState.Drive:

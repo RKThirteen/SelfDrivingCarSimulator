@@ -9,10 +9,11 @@ public class UIController : MonoBehaviour
 
     void Update()
     {
+        Debug.Log("UIController active");
         if (targetRigidbody != null && speedText != null)
         {
-            float speed = targetRigidbody.velocity.magnitude;
-            speedText.text = $"Speed: {speed:F1} m/s";
+            float speed = targetRigidbody.velocity.magnitude * 3.6f; // m/s → km/h
+            speedText.text = $"Speed: {speed:F1} km/h";
         }
     }
 }
