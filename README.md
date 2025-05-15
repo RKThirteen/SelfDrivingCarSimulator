@@ -1,7 +1,9 @@
-#Membrii echipei:
-Ghena-Ionescu Alexandru
-Barbu Eduard
-Uta Mario-Ernest
+## 🧑‍💻 Autori
+
+- Ghena-Ionescu Alexandru
+- Barbu Eduard
+- Uta Mario-Ernest
+
 
 # 🚗 Simulator de Conducere
 
