@@ -14,9 +14,14 @@ public class CarAI : MonoBehaviour
     private Rigidbody rb;
 
     [Header("Reverse Recovery")]
-    public float reverseTime = 2f;
-    private float reverseTimer = 0f;
-    private bool reversing = false;
+    public bool reversing = false;
+    public float reverseTimer = 2f;          // how long to reverse
+    public float reverseSpeed = 10f;          // speed while reversing
+    public float reverseBackoffDistance = 3f;   // how far to reverse
+    private float backedDistance = 0f;
+    private enum RecoverPhase { BackOff, Pivot }
+    private RecoverPhase recoverPhase;
+    private Vector3 recoverStartPos;
 
     [Header("Pathfinding")]
     public float waypointRadius = 2f;
@@ -50,8 +55,8 @@ public class CarAI : MonoBehaviour
     public float avoidanceForce = 2f;
     private Vector3 avoidanceVector;
 
-    private TrafficLight currentTrafficLight = null;
-    private bool inTrafficZone = false;
+    public TrafficLight currentTrafficLight = null;
+    public bool inTrafficZone = false;
 
     void Awake()
     {
@@ -284,38 +289,86 @@ public class CarAI : MonoBehaviour
             TransitionToState(CarState.Drive);
     }
 
+    void EnterRecover()
+    {
+        controller.currentGearIndex = 0;     // Reverse gear
+        controller.SetBrake(0f);
+        controller.SetThrottle(1f);         // Always use positive throttle
+        reversing = true;
+        recoverPhase = RecoverPhase.BackOff;
+        backedDistance = 0f;
+        reverseTimer = 2f;                   // reset timer each time
+        recoverStartPos = transform.position;
+    }
+
     void UpdateReverseRecovery()
     {
-        if (!reversing)
-        {
-            // Set reverse gear manually
-            controller.currentGearIndex = 0;
-            reversing = true;
-            reverseTimer = reverseTime;
-            Debug.Log("Entering Reverse Recovery");
-        }
-
+        // 1) tick down the timer
         reverseTimer -= Time.deltaTime;
 
-        Vector3 toWaypoint = (waypoints[currentWaypoint].position - transform.position).normalized;
-        float steer = Vector3.SignedAngle(transform.forward, toWaypoint, Vector3.up) / 45f;
-        steer = Mathf.Clamp(steer, -1f, 1f);
+        // 2) measure actual distance
+        backedDistance = Vector3.Distance(transform.position, recoverStartPos);
+        Debug.DrawRay(transform.position, -transform.forward * 3f, Color.magenta, 0.1f);
+        Debug.Log($"[Recover] Phase={recoverPhase}, backed={backedDistance:F2}, timer={reverseTimer:F2}");
 
-        controller.SetBrake(0f);       // Release brake
-        controller.SetThrottle(-1f);   // Apply reverse
-        controller.SetSteer(steer);    // Turn slightly toward path
-
-        Debug.DrawRay(transform.position + Vector3.up * 0.5f, -transform.forward * 5f, Color.magenta, 0.2f);
-
-
-        if (reverseTimer <= 0f)
+        // 3) handle phases
+        if (recoverPhase == RecoverPhase.BackOff)
         {
-            // Resume normal driving
-            reversing = false;
-            // Set back to forward gear (gear 1)
-            controller.currentGearIndex = 1;
-            controller.SetThrottle(0f);
-            TransitionToState(CarState.Drive);
+            controller.SetSteer(0f);
+            controller.SetThrottle(1f);
+            controller.SetBrake(0f);
+
+            if (backedDistance >= reverseBackoffDistance || reverseTimer <= 0f)
+            {
+                recoverPhase = RecoverPhase.Pivot;
+                controller.SetThrottle(0f);
+            }
+        }
+        else if (recoverPhase == RecoverPhase.Pivot)
+        {
+            // — A) Stay in reverse gear —
+            controller.currentGearIndex = 0;
+
+            // — B) Compute target direction and signed yaw error —
+            Vector3 pivotTarget = (waypoints.Count > 0 && currentWaypoint < waypoints.Count)
+                ? waypoints[currentWaypoint].position
+                : (targetSelector.CurrentTarget != null 
+                ? targetSelector.CurrentTarget.position 
+                : transform.position + transform.forward);
+            Vector3 pivotDir = (pivotTarget - transform.position).normalized;
+            float angle = Vector3.SignedAngle(transform.forward, pivotDir, Vector3.up);
+
+            // — C) Dynamic steering — more lock when error is large
+            float steerInput = Mathf.Clamp(angle / maxSteerAngle, -1f, 1f);
+            controller.SetSteer(steerInput);
+
+            // — D) Dynamic reverse throttle — fast when angle large, slow when near aligned
+            //   angleFactor == 1 at |angle|==180°, ==0 at angle==0
+            float angleFactor = Mathf.Clamp01(Mathf.Abs(angle) / 180f);
+            // map angleFactor [0..1] to throttle [min..max]
+            float minPivotThrottle = 0.1f;
+            float maxPivotThrottle = reverseSpeed /  (/* reverseSpeed is km/h */ 3.6f)  * 0.8f;
+                // use up to ~80% of your back-speed so you don’t skid too fast
+            float pivotThrottle = Mathf.Lerp(minPivotThrottle, maxPivotThrottle, angleFactor);
+            controller.SetBrake(0f);
+            controller.SetThrottle(pivotThrottle);
+
+            // — E) Clamp actual backward speed so you never exceed reverseSpeed —
+            float maxBackVel = reverseSpeed / 3.6f;
+            float backVel    = Vector3.Dot(rb.velocity, -transform.forward);
+            if (backVel > maxBackVel)
+                rb.velocity = -transform.forward * maxBackVel;
+
+            // — F) Finish when aligned —
+            const float finishAngleThreshold = 10f;
+            if (Mathf.Abs(angle) < finishAngleThreshold)
+            {
+                // unlock and go back to Drive
+                reversing = false;
+                controller.SetBrake(0f);
+                controller.currentGearIndex = 1;   // first forward gear
+                TransitionToState(CarState.Drive);
+            }
         }
     }
 
@@ -537,12 +590,17 @@ public class CarAI : MonoBehaviour
         switch (newState)
         {
             case CarState.Drive:
-                controller.SetBrake(0f);
-                controller.currentGearIndex = Mathf.Max(1, controller.currentGearIndex);
+                controller.SetBrake(1f);               // lock the wheels for one frame
+                controller.currentGearIndex = 1;       // first forward gear
+                controller.SetThrottle(0f);
                 break;
 
             case CarState.AvoidObstacle:
                 avoidanceVector = CalculateAvoidance();
+                break;
+
+            case CarState.Recover:
+                EnterRecover();
                 break;
         }
         currentState = newState;

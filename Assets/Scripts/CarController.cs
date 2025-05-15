@@ -184,12 +184,21 @@ public class CarController : MonoBehaviour
 
         float avgWheelRPM = (wheelColliders[2].rpm + wheelColliders[3].rpm) / 2f;
         float normalizedRPM = Mathf.Clamp01(Mathf.Abs(avgWheelRPM) / maxRPM);
-        float torque = throttleInput * maxMotorTorque * torqueCurve.Evaluate(normalizedRPM) * gear.torqueMultiplier;
+        float baseTorque = maxMotorTorque * torqueCurve.Evaluate(normalizedRPM) * gear.torqueMultiplier;
 
+        // Use throttle sign for direction
+        float torque = throttleInput * baseTorque;
         // Fix: allow torque if nearly stopped OR wheels spinning the right direction
         bool isNearStop = rb.velocity.magnitude < 0.5f;
-        bool spinningCorrectly = Mathf.Sign(avgWheelRPM) == direction;
-        bool allowTorque = spinningCorrectly || (isNearStop && Mathf.Abs(avgWheelRPM) < 5f);
+        bool spinningCorrectly = Mathf.Sign(Vector3.Dot(rb.velocity, transform.forward)) == direction;
+        bool allowTorque;
+        if (!gear.isReverse) {
+            // in Drive, as soon as throttle>0 we push forward
+            allowTorque = throttleInput > 0f;
+        } else {
+            // your existing reverse-slip logic
+            allowTorque = spinningCorrectly || (isNearStop && Mathf.Abs(avgWheelRPM) < 5f);
+        }
 
         if (allowTorque)
         {
