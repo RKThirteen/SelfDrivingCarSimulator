@@ -35,7 +35,8 @@ public class GridManager : MonoBehaviour
                 Vector3 worldPoint = worldBottomLeft + Vector3.right * (x * nodeDiameter + nodeRadius)
                                                       + Vector3.forward * (y * nodeDiameter + nodeRadius);
                 bool walkable = !Physics.CheckSphere(worldPoint, nodeRadius, unwalkableMask);
-                grid[x, y] = new Node(walkable, worldPoint, x, y);
+                bool hasGround = Physics.Raycast(worldPoint + Vector3.up * 0.5f, Vector3.down, 1.0f, ~unwalkableMask);
+                grid[x, y] = new Node(walkable && hasGround, worldPoint, x, y);
             }
         }
     }

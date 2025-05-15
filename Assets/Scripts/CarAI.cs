@@ -144,11 +144,16 @@ public class CarAI : MonoBehaviour
 
     bool DetectObstacle()
     {
+        Vector3 origin = transform.position + Vector3.up * 0.5f;
         foreach (float angle in rayAngles)
         {
             Quaternion rotation = Quaternion.AngleAxis(angle, transform.up);
-            if (Physics.Raycast(transform.position + Vector3.up * 0.5f, rotation * transform.forward, rayRange, obstacleMask))
+            Vector3 direction = rotation * transform.forward;
+            // Raycast pentru a detecta obstacole
+            if (Physics.SphereCast(origin, 0.5f, direction, out RaycastHit hit, rayRange, obstacleMask))
+            {
                 return true;
+            }
         }
         return false;
     }
