@@ -2,18 +2,20 @@ using UnityEngine;
 
 public class TrafficLightZone : MonoBehaviour
 {
+    public TrafficLight linkedLight; // Assign in Inspector
+
     private void OnTriggerEnter(Collider other)
     {
-        CarAI car = other.GetComponent<CarAI>();
-        if (car != null)
+        CarAI car = other.GetComponentInParent<CarAI>();
+        if (car != null && linkedLight != null)
         {
-            car.EnterTrafficZone();
+            car.EnterTrafficZone(linkedLight);
         }
     }
 
     private void OnTriggerExit(Collider other)
     {
-        CarAI car = other.GetComponent<CarAI>();
+        CarAI car = other.GetComponentInParent<CarAI>();
         if (car != null)
         {
             car.ExitTrafficZone();

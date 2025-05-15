@@ -4,7 +4,7 @@ using UnityEngine;
 [RequireComponent(typeof(CarController))]
 public class CarAI : MonoBehaviour
 {
-    public enum CarState { Idle, Pathfind, Drive, AvoidObstacle, Stop }
+    public enum CarState { Idle, Pathfind, Drive, AvoidObstacle, Stop, Recover }
     public CarState currentState = CarState.Pathfind;
 
     [Header("Core References")]
@@ -12,6 +12,11 @@ public class CarAI : MonoBehaviour
     public TargetSelector targetSelector;
     private CarController controller;
     private Rigidbody rb;
+
+    [Header("Reverse Recovery")]
+    public float reverseTime = 2f;
+    private float reverseTimer = 0f;
+    private bool reversing = false;
 
     [Header("Pathfinding")]
     public float waypointRadius = 2f;
@@ -26,12 +31,27 @@ public class CarAI : MonoBehaviour
     public float speedAnticipation = 1.5f;
     public float brakeDistanceMultiplier = 0.8f;
 
+    [Header("Throttle/Brake Smoothing")]
+    public float throttleSmoothTime = 0.5f;
+    public float brakeSmoothTime = 0.3f;
+    private float currentThrottle = 0f;
+    private float currentBrake = 0f;
+    
+
+    [Header("Predictive Avoidance")]
+    public float predictiveRange = 15f;
+    public float slowdownThreshold = 10f; // how far before obstacle we start slowing down
+    public float minThrottle = 0.3f;
+
     [Header("Obstacle Avoidance")]
     public float[] rayAngles = { -30f, 0f, 30f };
-    public float rayRange = 8f;
+    public float rayRange = 12f;
     public LayerMask obstacleMask;
     public float avoidanceForce = 2f;
     private Vector3 avoidanceVector;
+
+    private TrafficLight currentTrafficLight = null;
+    private bool inTrafficZone = false;
 
     void Awake()
     {
@@ -59,6 +79,8 @@ public class CarAI : MonoBehaviour
             case CarState.Drive: UpdateDriving(); break;
             case CarState.AvoidObstacle: UpdateAvoidance(); break;
             case CarState.Stop: UpdateStop(); break;
+            case CarState.Recover: UpdateReverseRecovery(); break;
+
         }
     }
 
@@ -76,6 +98,45 @@ public class CarAI : MonoBehaviour
         CalculatePath();
     }
 
+    void AutoShift()
+    {
+        if (controller == null || controller.gears == null || controller.gears.Count == 0)
+            return;
+
+        if (controller.isShifting) return;
+
+        float speed = rb.velocity.magnitude * 3.6f; // km/h
+        float throttle = currentThrottle;
+
+        // Estimate upcoming curve sharpness
+        float steeringDemand = Mathf.Abs(currentWaypoint < waypoints.Count
+            ? Vector3.SignedAngle(transform.forward, waypoints[currentWaypoint].position - transform.position, Vector3.up)
+            : 0f);
+
+        bool approachingCurve = steeringDemand > 30f;
+
+        int bestGearIndex = controller.currentGearIndex;
+
+        for (int i = 0; i < controller.gears.Count; i++)
+        {
+            var gear = controller.gears[i];
+
+            if (!gear.isReverse && speed >= gear.minSpeed && speed < gear.maxSpeed)
+            {
+                bestGearIndex = i;
+
+                // Shift to lower gear earlier if a curve is coming
+                if (approachingCurve && i > 1)
+                    bestGearIndex = Mathf.Max(i - 1, 1);
+
+                break;
+            }
+        }
+
+        if (bestGearIndex != controller.currentGearIndex)
+            StartCoroutine(controller.GearShiftDelay(bestGearIndex));
+    }
+
     void UpdateDriving()
     {
         if (waypoints.Count == 0 || currentWaypoint >= waypoints.Count)
@@ -83,6 +144,8 @@ public class CarAI : MonoBehaviour
             TransitionToState(CarState.Pathfind);
             return;
         }
+        
+        AutoShift();
 
         Vector3 targetPos = waypoints[currentWaypoint].position;
         Vector3 localTarget = transform.InverseTransformPoint(targetPos);
@@ -93,15 +156,46 @@ public class CarAI : MonoBehaviour
 
         float distanceToWaypoint = Vector3.Distance(transform.position, targetPos);
         float anticipatedSpeed = rb.velocity.magnitude + (controller.GetAcceleration().magnitude * speedAnticipation);
-        float throttleInput = (anticipatedSpeed < desiredSpeed) ? 1f : 0f;
+        float speed = rb.velocity.magnitude;
+        float throttleInput = Mathf.Clamp01(1f - (speed / desiredSpeed)); // scales from 1 to 0 as you approach desiredSpeed
+
+        if (PredictObstacle(out float obsDist) && obsDist < slowdownThreshold)
+        {
+            float slowFactor = Mathf.Clamp01(obsDist / slowdownThreshold);
+            throttleInput = Mathf.Lerp(minThrottle, throttleInput, slowFactor);
+        }
+
+        if (inTrafficZone && currentTrafficLight != null)
+        {
+            if (currentTrafficLight.currentState == LightState.Red)
+            {
+                TransitionToState(CarState.Stop);
+                return;
+            }
+            else if (currentTrafficLight.currentState == LightState.Yellow)
+            {
+                float distanceToLight = Vector3.Distance(transform.position, currentTrafficLight.transform.position);
+                if (distanceToLight < 20f)
+                {
+                    throttleInput = Mathf.Clamp(throttleInput * 0.5f, 0f, 0.5f);
+                }
+            }
+        }
 
         float brakeInput = 0f;
         if (distanceToWaypoint < (desiredSpeed * brakeDistanceMultiplier))
             brakeInput = Mathf.Clamp01(1 - (distanceToWaypoint / (desiredSpeed * brakeDistanceMultiplier)));
 
+        float targetThrottle = throttleInput * (1 - brakeInput);
+        float targetBrake = brakeInput;
+        
+
+        currentThrottle = Mathf.Lerp(currentThrottle, targetThrottle, Time.deltaTime / throttleSmoothTime);
+        currentBrake = Mathf.Lerp(currentBrake, targetBrake, Time.deltaTime / brakeSmoothTime);
+
         controller.SetSteer(Mathf.Clamp(adjustedSteer / maxSteerAngle, -1f, 1f));
-        controller.SetThrottle(throttleInput * (1 - brakeInput));
-        controller.SetBrake(brakeInput);
+        controller.SetThrottle(currentThrottle);
+        controller.SetBrake(currentBrake);
 
         if (distanceToWaypoint < waypointRadius)
         {
@@ -120,18 +214,66 @@ public class CarAI : MonoBehaviour
             
 
         if (DetectObstacle())
-            TransitionToState(CarState.AvoidObstacle);
+        {
+            float angleToWaypoint = Vector3.Angle(transform.forward, (waypoints[currentWaypoint].position - transform.position).normalized);
+
+            // Car is slow and facing ~wrong direction (i.e. diagonal wall)
+            if (speed < 1f && angleToWaypoint > 45f)
+            {
+                TransitionToState(CarState.Recover);
+            }
+            else
+            {
+                TransitionToState(CarState.AvoidObstacle);
+            }
+        }
     }
 
     void UpdateAvoidance()
     {
-        Vector3 avoidanceSteer = CalculateAvoidance();
-        controller.SetSteer(avoidanceSteer.x);
-        controller.SetThrottle(0.7f);
+        Vector3 avoidance = CalculateAvoidance();
 
+        float avoidanceSteer = avoidance.x * maxSteerAngle;
+        controller.SetSteer(Mathf.Clamp(avoidanceSteer / maxSteerAngle, -1f, 1f));
+
+        float speed = rb.velocity.magnitude;
+
+        // Dynamic throttle/brake based on how close the obstacle is
+        float closestDist;
+        bool hasObstacle = PredictObstacle(out closestDist);
+
+        if (hasObstacle && closestDist < 6f)
+        {
+            currentThrottle = Mathf.Lerp(currentThrottle, 0.3f, Time.deltaTime / throttleSmoothTime);
+            currentBrake = Mathf.Lerp(currentBrake, 0.5f, Time.deltaTime / brakeSmoothTime);
+        }
+        else
+        {
+            currentThrottle = Mathf.Lerp(currentThrottle, 0.6f, Time.deltaTime / throttleSmoothTime);
+            currentBrake = Mathf.Lerp(currentBrake, 0.2f, Time.deltaTime / brakeSmoothTime);
+        }
+
+        controller.SetThrottle(currentThrottle);
+        controller.SetBrake(currentBrake);
+
+        // Check if car is stuck and badly aligned → Recover
+        if (DetectObstacle())
+        {
+            float angleToWaypoint = Vector3.Angle(transform.forward, (waypoints[currentWaypoint].position - transform.position).normalized);
+            if (speed < 1f && angleToWaypoint > 45f)
+            {
+                TransitionToState(CarState.Recover);
+                return;
+            }
+        }
+
+        // If no obstacle detected anymore → back to Drive
         if (!DetectObstacle())
+        {
             TransitionToState(CarState.Drive);
+        }
     }
+
 
     void UpdateStop()
     {
@@ -142,17 +284,91 @@ public class CarAI : MonoBehaviour
             TransitionToState(CarState.Drive);
     }
 
+    void UpdateReverseRecovery()
+    {
+        if (!reversing)
+        {
+            // Set reverse gear manually
+            controller.currentGearIndex = 0;
+            reversing = true;
+            reverseTimer = reverseTime;
+            Debug.Log("Entering Reverse Recovery");
+        }
+
+        reverseTimer -= Time.deltaTime;
+
+        Vector3 toWaypoint = (waypoints[currentWaypoint].position - transform.position).normalized;
+        float steer = Vector3.SignedAngle(transform.forward, toWaypoint, Vector3.up) / 45f;
+        steer = Mathf.Clamp(steer, -1f, 1f);
+
+        controller.SetBrake(0f);       // Release brake
+        controller.SetThrottle(-1f);   // Apply reverse
+        controller.SetSteer(steer);    // Turn slightly toward path
+
+        Debug.DrawRay(transform.position + Vector3.up * 0.5f, -transform.forward * 5f, Color.magenta, 0.2f);
+
+
+        if (reverseTimer <= 0f)
+        {
+            // Resume normal driving
+            reversing = false;
+            // Set back to forward gear (gear 1)
+            controller.currentGearIndex = 1;
+            controller.SetThrottle(0f);
+            TransitionToState(CarState.Drive);
+        }
+    }
+
+
+    bool PredictObstacle(out float obstacleDistance)
+    {
+        obstacleDistance = Mathf.Infinity;
+
+        foreach (float angle in rayAngles)
+        {
+            Quaternion rotation = Quaternion.AngleAxis(angle, transform.up);
+            Vector3 dir = rotation * transform.forward;
+            Vector3 origin = transform.position + Vector3.up * 0.5f;
+
+            if (Physics.Raycast(origin, dir, out RaycastHit hit, predictiveRange, obstacleMask))
+            {
+                if (hit.distance < obstacleDistance)
+                {
+                    obstacleDistance = hit.distance;
+                }
+            }
+        }
+
+        return obstacleDistance < predictiveRange;
+    }
+
+
     bool DetectObstacle()
     {
-        Vector3 origin = transform.position + Vector3.up * 0.5f;
+        Vector3 origin = rb.position + Vector3.up;
         foreach (float angle in rayAngles)
         {
             Quaternion rotation = Quaternion.AngleAxis(angle, transform.up);
             Vector3 direction = rotation * transform.forward;
+            Debug.DrawRay(origin, direction * rayRange, Color.yellow, 1f);
             // Raycast pentru a detecta obstacole
             if (Physics.SphereCast(origin, 0.5f, direction, out RaycastHit hit, rayRange, obstacleMask))
             {
-                return true;
+                Debug.DrawLine(origin, origin + direction * hit.distance, Color.red, 0.2f);
+                Debug.Log("Obstacle detected: " + hit.collider.name);
+                // If obstacle has Rigidbody, check velocity
+                Rigidbody obstacleRb = hit.collider.attachedRigidbody;
+                if (obstacleRb != null)
+                {
+                    Vector3 relativeVelocity = obstacleRb.velocity - rb.velocity;
+                    float closingSpeed = Vector3.Dot(relativeVelocity, direction);
+                    if (closingSpeed > 0f) // moving toward us
+                        return true;
+                }
+                else
+                {
+                    return true; // Static obstacle
+                }
             }
         }
         return false;
@@ -322,6 +538,7 @@ public class CarAI : MonoBehaviour
         {
             case CarState.Drive:
                 controller.SetBrake(0f);
+                controller.currentGearIndex = Mathf.Max(1, controller.currentGearIndex);
                 break;
 
             case CarState.AvoidObstacle:
@@ -337,8 +554,20 @@ public class CarAI : MonoBehaviour
             Vector3.Distance(transform.position, targetSelector.CurrentTarget.position), obstacleMask);
     }
 
-    public void EnterTrafficZone() => TransitionToState(CarState.Stop);
-    public void ExitTrafficZone() => TransitionToState(CarState.Drive);
+    public void EnterTrafficZone(TrafficLight light)
+    {
+        currentTrafficLight = light;
+        inTrafficZone = true;
+        Debug.Log("Entered traffic zone with light: " + light.name);
+    }
+
+    public void ExitTrafficZone()
+    {
+        currentTrafficLight = null;
+        inTrafficZone = false;
+        Debug.Log("Exited traffic zone");
+        TransitionToState(CarState.Drive);
+    }
 
     void OnDrawGizmos()
     {

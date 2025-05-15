@@ -86,7 +86,9 @@ public class GridManager : MonoBehaviour
         {
             foreach (Node n in grid)
             {
-                Gizmos.color = n.walkable ? Color.white : Color.red;
+                Gizmos.color = n.walkable
+                    ? new Color(1f, 1f, 1f, 0.2f) // white
+                    : new Color(1f, 0f, 0f, 0.3f); // red
                 Gizmos.DrawCube(n.worldPosition, Vector3.one * (nodeDiameter - 0.1f));
             }
         }

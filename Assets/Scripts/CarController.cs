@@ -1,8 +1,25 @@
+using System.Collections.Generic;
+using System.Collections;
 using UnityEngine;
 
 [RequireComponent(typeof(Rigidbody))]
 public class CarController : MonoBehaviour
 {
+    [System.Serializable]
+    public class Gear
+    {
+        public string name;
+        public float minSpeed;
+        public float maxSpeed;
+        public float torqueMultiplier;
+        public bool isReverse;
+    }
+    [Header("Transmission")]
+    public List<Gear> gears = new List<Gear>();
+    public int currentGearIndex = 0;
+    public float shiftDelay = 1f;
+    public bool isShifting = false;
+    public float rpm;
     [Header("Chassis & Wheels")]
     public Rigidbody rb;
     public WheelCollider[] wheelColliders;
@@ -44,7 +61,7 @@ public class CarController : MonoBehaviour
             torqueCurve = new AnimationCurve(
                 new Keyframe(0f, 1f),   // cuplu maxim la RPM mic
                 new Keyframe(0.5f, 1f), // constant în zona medie
-                new Keyframe(1f, 0.7f)  // scade puțin la maxim RPM
+                new Keyframe(1f, 0.85f)  // scade puțin la maxim RPM
             );
         }
         rb.centerOfMass = new Vector3(0, -0.9f, 0);
@@ -67,13 +84,75 @@ public class CarController : MonoBehaviour
         }
     }
 
+    public IEnumerator GearShiftDelay(int newGearIndex)
+    {
+        if (newGearIndex == currentGearIndex || isShifting) yield break;
+
+        isShifting = true;
+        yield return new WaitForSeconds(shiftDelay);
+        currentGearIndex = newGearIndex;
+        isShifting = false;
+    }
+
+    void HandleManualGearInput()
+    {
+        if (isShifting) return;
+
+        if (Input.GetKeyDown(KeyCode.E))
+            ShiftUp();
+        else if (Input.GetKeyDown(KeyCode.Q))
+            ShiftDown();
+        //Debug.Log($"Current Gear: {gears[currentGearIndex].name}, RPM: {rpm}");
+        Debug.Log($"Current Gear: {gears[currentGearIndex].name}");
+    }
+
+    void ShiftUp()
+    {
+        if (currentGearIndex < gears.Count - 1)
+        {
+            currentGearIndex++;
+            StartCoroutine(GearShiftDelay());
+        }
+    }
+
+    void ShiftDown()
+    {
+        if (currentGearIndex > 0)
+        {
+            currentGearIndex--;
+            StartCoroutine(GearShiftDelay());
+        }
+    }
+
+    IEnumerator GearShiftDelay()
+    {
+        isShifting = true;
+        yield return new WaitForSeconds(shiftDelay);
+        isShifting = false;
+    }
+
+
+    void UpdateRPM()
+    {
+        float avgWheelRPM = (wheelColliders[2].rpm + wheelColliders[3].rpm) / 2f;
+        rpm = Mathf.Lerp(1000f, maxRPM, Mathf.Abs(avgWheelRPM) / maxRPM);
+    }
+
+
+    void Update()
+    {
+        HandleManualGearInput();
+        UpdateRPM();
+    }
+
+
     void FixedUpdate()
     {
         
         for (int i = 0; i < wheelColliders.Length; i++)
         {
             bool grounded = wheelColliders[i].GetGroundHit(out WheelHit hit);
-            Debug.Log($"Wheel {i}: Grounded = {grounded}, Hit force = {hit.force}");
+            //Debug.Log($"Wheel {i}: Grounded = {grounded}, Hit force = {hit.force}");
         }
         acceleration = (rb.velocity - lastVelocity) / Time.fixedDeltaTime;
         lastVelocity = rb.velocity;
@@ -94,26 +173,28 @@ public class CarController : MonoBehaviour
 
     private void ApplyEngine()
     {
-        float wheelRPM = (wheelColliders[2].rpm + wheelColliders[3].rpm) / 2f;
-        float normalizedRPM = Mathf.Clamp01(Mathf.Abs(wheelRPM) / maxRPM);
-        float torque = throttleInput * maxMotorTorque * torqueCurve.Evaluate(normalizedRPM);
+        if (isShifting) return;
 
-        if (Mathf.Sign(wheelRPM) == Mathf.Sign(throttleInput) || throttleInput == 0)
+        Gear gear = gears[currentGearIndex];
+
+        float direction = gear.isReverse ? -1f : 1f;
+
+        float avgWheelRPM = (wheelColliders[2].rpm + wheelColliders[3].rpm) / 2f;
+        float normalizedRPM = Mathf.Clamp01(Mathf.Abs(avgWheelRPM) / maxRPM);
+        float torque = throttleInput * maxMotorTorque * torqueCurve.Evaluate(normalizedRPM) * gear.torqueMultiplier;
+
+        bool allowTorque = Mathf.Sign(avgWheelRPM) == direction || Mathf.Abs(avgWheelRPM) < 3f;
+
+        if (allowTorque)
         {
-            wheelColliders[2].motorTorque = torque;
-            wheelColliders[3].motorTorque = torque;
+            wheelColliders[2].motorTorque = torque * direction;
+            wheelColliders[3].motorTorque = torque * direction;
         }
-        // else
-        // {
-        //     if (Mathf.Abs(wheelRPM) < 1f || Mathf.Sign(wheelRPM) == Mathf.Sign(throttleInput))
-        //         ApplyBrake(maxBrakeTorque * 0.5f);
-        // }
         else
         {
             wheelColliders[2].motorTorque = 0f;
             wheelColliders[3].motorTorque = 0f;
         }
-        //Debug.Log($"Throttle={throttleInput}, RPM={wheelRPM}, TorqueCurve={torqueCurve.Evaluate(normalizedRPM)}");
     }
 
     private void ApplyBrake(float brakeInput = 0f)
