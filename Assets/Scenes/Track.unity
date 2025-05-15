@@ -1761,7 +1761,7 @@ MonoBehaviour:
   - name: R
     minSpeed: 0
     maxSpeed: 15
-    torqueMultiplier: 1.3
+    torqueMultiplier: 1.5
     isReverse: 1
   - name: Gear 1
     minSpeed: 0
