@@ -3,7 +3,7 @@ Ghena-Ionescu Alexandru
 Barbu Eduard
 Uta Mario-Ernest
 
-# 🚗 Simulatoare de Conducere
+# 🚗 Simulator de Conducere
 
 Un simulator construit în Unity pentru a reproduce comportamentul unei mașini care navighează într-un mediu virtual folosind pathfinding (A*), evitarea obstacolelor, semafoare și un sistem realist de control al vehiculului.
 
