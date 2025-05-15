@@ -103,7 +103,6 @@ public class CarController : MonoBehaviour
         else if (Input.GetKeyDown(KeyCode.Q))
             ShiftDown();
         //Debug.Log($"Current Gear: {gears[currentGearIndex].name}, RPM: {rpm}");
-        Debug.Log($"Current Gear: {gears[currentGearIndex].name}");
     }
 
     void ShiftUp()
@@ -149,13 +148,17 @@ public class CarController : MonoBehaviour
     void FixedUpdate()
     {
         
-        for (int i = 0; i < wheelColliders.Length; i++)
-        {
-            bool grounded = wheelColliders[i].GetGroundHit(out WheelHit hit);
-            //Debug.Log($"Wheel {i}: Grounded = {grounded}, Hit force = {hit.force}");
-        }
+        // for (int i = 0; i < wheelColliders.Length; i++)
+        // {
+        //     bool grounded = wheelColliders[i].GetGroundHit(out WheelHit hit);
+        //     Debug.Log($"Wheel {i}: Grounded = {grounded}, Hit force = {hit.force}");
+        // }
         acceleration = (rb.velocity - lastVelocity) / Time.fixedDeltaTime;
         lastVelocity = rb.velocity;
+
+        bool groundedRearLeft = wheelColliders[2].GetGroundHit(out _);
+        bool groundedRearRight = wheelColliders[3].GetGroundHit(out _);
+        Debug.Log($"Rear wheels grounded: {groundedRearLeft && groundedRearRight}");
 
         ApplyEngine();
         ApplyBrake();
@@ -183,7 +186,10 @@ public class CarController : MonoBehaviour
         float normalizedRPM = Mathf.Clamp01(Mathf.Abs(avgWheelRPM) / maxRPM);
         float torque = throttleInput * maxMotorTorque * torqueCurve.Evaluate(normalizedRPM) * gear.torqueMultiplier;
 
-        bool allowTorque = Mathf.Sign(avgWheelRPM) == direction || Mathf.Abs(avgWheelRPM) < 3f;
+        // Fix: allow torque if nearly stopped OR wheels spinning the right direction
+        bool isNearStop = rb.velocity.magnitude < 0.5f;
+        bool spinningCorrectly = Mathf.Sign(avgWheelRPM) == direction;
+        bool allowTorque = spinningCorrectly || (isNearStop && Mathf.Abs(avgWheelRPM) < 5f);
 
         if (allowTorque)
         {
@@ -195,6 +201,7 @@ public class CarController : MonoBehaviour
             wheelColliders[2].motorTorque = 0f;
             wheelColliders[3].motorTorque = 0f;
         }
+        Debug.Log($"Gear: {gear.name}, RPM: {avgWheelRPM}, Velocity: {rb.velocity.magnitude}, AllowTorque: {allowTorque}");
     }
 
     private void ApplyBrake(float brakeInput = 0f)
