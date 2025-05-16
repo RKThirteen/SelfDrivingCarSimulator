@@ -30,6 +30,7 @@ public class UIController : MonoBehaviour
         {
             cameraHelpText.text = "";
         }
+        Debug.Log(carRb);
     }
 
     void Update()
