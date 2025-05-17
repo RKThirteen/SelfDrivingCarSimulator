@@ -7,6 +7,9 @@ public class CarAI : MonoBehaviour
     public enum CarState { Idle, Pathfind, Drive, AvoidObstacle, Stop, Recover }
     public CarState currentState = CarState.Pathfind;
 
+    [Header("Lap Counter")]
+    public int lapCount = 0;
+
     [Header("Core References")]
     public GridManager gridManager;
     public TargetSelector targetSelector;
@@ -18,13 +21,8 @@ public class CarAI : MonoBehaviour
     public float reverseTimer = 2f;          // how long to reverse
     public float reverseSpeed = 10f;          // speed while reversing
     public float reverseBackoffDistance = 3f;   // how far to reverse
-    private float backedDistance = 0f;
     private enum RecoverPhase { BackOff, Pivot }
-    private float pauseDuration = 1f;  // how long to wait
-    private float pauseTimer;
-    private RecoverPhase recoverPhase;
     private Vector3 recoverStartPos;
-
     public float frontOffset = 1.5f;           // meters ahead of center
     private float lastFrontDist = Mathf.Infinity;
     private float lastAngle = 0f;
@@ -179,7 +177,8 @@ public class CarAI : MonoBehaviour
 
     void UpdateDriving()
     {
-        if (waypoints.Count == 0 || currentWaypoint >= waypoints.Count)
+        if (waypoints == null || waypoints.Count == 0 || 
+            currentWaypoint < 0 || currentWaypoint >= waypoints.Count)
         {
             TransitionToState(CarState.Pathfind);
             return;
@@ -198,8 +197,7 @@ public class CarAI : MonoBehaviour
             float distCurrent = Vector3.Distance(transform.position, wpCurrent);
             float distNext = Vector3.Distance(transform.position, wpNext);
 
-            // If we're already closer to the *next* waypoint, or if the waypoint
-            // is behind us (dot < 0), skip it:
+            // Skip to next waypoint if we are closer to it or if we are facing away from the current one
             if (distNext + 0.1f < distCurrent ||
                 Vector3.Dot(transform.forward, (wpCurrent - transform.position).normalized) < 0f)
             {
@@ -223,7 +221,7 @@ public class CarAI : MonoBehaviour
         float distanceToWaypoint = Vector3.Distance(transform.position, targetPos);
         float anticipatedSpeed = rb.velocity.magnitude + (controller.GetAcceleration().magnitude * speedAnticipation);
         float speed = rb.velocity.magnitude;
-        float throttleInput = Mathf.Clamp01(1f - (speed / desiredSpeed)); // scales from 1 to 0 as you approach desiredSpeed
+        float throttleInput = Mathf.Clamp01(1f - (speed / desiredSpeed)); // scales from 1 to 0 as we approach desiredSpeed
 
         if (PredictObstacle(out float obsDist, out float lookAhead))
         {
@@ -269,10 +267,13 @@ public class CarAI : MonoBehaviour
                 // Gata cu path-ul actual → trecem la următorul target
                 if (targetSelector != null)
                 {
+                    if (targetSelector.currentIndex == 0)
+                        lapCount++;
                     targetSelector.NextTarget(); // schimba targetul
                 }
 
                 TransitionToState(CarState.Pathfind); // recalculează path-ul spre noul target
+                return;
             }
         }
 
@@ -294,22 +295,6 @@ public class CarAI : MonoBehaviour
         
     }
 
-    bool IsAnyNodeObstructed()
-    {
-        Vector3 origin = transform.position + Vector3.up * 0.5f;
-        for (int i = currentWaypoint; i < waypoints.Count; i++)
-        {
-            Vector3 wpPos = waypoints[i].position;
-            Vector3 dir   = (wpPos - transform.position).normalized;
-            float   dist  = Vector3.Distance(transform.position, wpPos);
-
-            // You can swap to SphereCast if you want to account for car width:
-            if (Physics.Raycast(origin, dir, dist, obstacleMask))
-                return true;
-        }
-        return false;
-    }
-
     float avoidanceTimer = 0f;
     void UpdateAvoidance()
     {
@@ -319,7 +304,7 @@ public class CarAI : MonoBehaviour
             return;
         AutoShift();
 
-        // 2) Predict upcoming obstacle
+        // Predict upcoming obstacle
         float obstacleDist, lookAhead;
         bool hasObstacle = PredictObstacle(out obstacleDist, out lookAhead);
         avoidanceTimer += Time.deltaTime;
@@ -330,11 +315,11 @@ public class CarAI : MonoBehaviour
             TransitionToState(CarState.Drive);
         }
 
-        // 3) Steering: steer away from the obstacle
+        // Steering: steer away from the obstacle
         Vector3 avoidance = CalculateAvoidance();
         controller.SetSteer(Mathf.Clamp(avoidance.x, -1f, 1f));
 
-        // 4) Speed control
+        // Speed control
         float speed = rb.velocity.magnitude;
 
         if (speed < 1f)
@@ -342,10 +327,10 @@ public class CarAI : MonoBehaviour
             TransitionToState(CarState.Recover);
         }
 
-        // — base throttle to maintain desiredSpeed
+        // base throttle to maintain desiredSpeed
         float baseThrottle = Mathf.Clamp01(1f - (speed / desiredSpeed));
 
-        // — scale it down by how close we are to the obstacle
+        // scale it down by how close we are to the obstacle
         float slowdownFactor = hasObstacle 
             ? Mathf.Clamp01(obstacleDist / slowdownThreshold) 
             : 1f;
@@ -354,7 +339,7 @@ public class CarAI : MonoBehaviour
             baseThrottle
         );
 
-        // — brake only if really close
+        // brake only if really close
         float brakeTarget = (hasObstacle && obstacleDist < slowdownThreshold * 0.5f) ? 1f : 0f;
 
         UpdateSpeedControl(throttleTarget, brakeTarget);
@@ -383,24 +368,23 @@ public class CarAI : MonoBehaviour
     void EnterRecover()
     {
         recoverStartPos = transform.position;
-        reverseTimer    = 2f;        // or whatever back-off duration you like
-        reversing       = true;
-        // no need to set steer/throttle here; UpdateReverseRecovery handles it
+        reverseTimer = 2f;
+        reversing = true;
     }
 
     void UpdateReverseRecovery()
     {
-        // 1) Ensure we’re in reverse gear and steering straight
+        // Ensure we’re in reverse gear and steering straight
         controller.currentGearIndex = 0;
         controller.SetSteer(0f);
         controller.SetBrake(0f);
         controller.SetThrottle(1f);
 
-        // 2) Count down timer and distance backed
+        // Count down timer and distance backed
         reverseTimer -= Time.deltaTime;
         float backed = Vector3.Distance(transform.position, recoverStartPos);
 
-        // 3) Once we’ve backed far enough or time’s up, stop and re-path
+        // Once we’ve backed far enough or time’s up, stop and re-path
         if (backed >= reverseBackoffDistance || reverseTimer <= 0f)
         {
             controller.SetThrottle(0f);
@@ -447,7 +431,7 @@ public class CarAI : MonoBehaviour
             Quaternion rotation = Quaternion.AngleAxis(angle, transform.up);
             Vector3 direction = rotation * transform.forward;
             Debug.DrawRay(origin, direction * rayRange, Color.yellow, 1f);
-            // Raycast pentru a detecta obstacole
+            // Raycast for obstacle detection
             if (Physics.SphereCast(origin, 0.5f, direction, out RaycastHit hit, rayRange, obstacleMask))
             {
                 Debug.DrawLine(origin, origin + direction * hit.distance, Color.red, 0.2f);

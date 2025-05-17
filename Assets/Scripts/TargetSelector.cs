@@ -4,7 +4,7 @@ using UnityEngine;
 public class TargetSelector : MonoBehaviour
 {
     public List<Transform> targets;
-    private int currentIndex = 0;
+    public int currentIndex = 0;
 
     public Transform CurrentTarget => targets.Count > 0 ? targets[currentIndex] : null;
 

@@ -15,7 +15,7 @@ public class UIController : MonoBehaviour
     [SerializeField] private TMP_Text cameraHelpText;
     [SerializeField] private TMP_Text trafficLightText;
     [SerializeField] private TMP_Text stateText;
-    [SerializeField] private TMP_Text rpmText;
+    [SerializeField] private TMP_Text lapText;
 
     [Header("Options")]
     public bool showHelpText = true;
@@ -43,11 +43,11 @@ public class UIController : MonoBehaviour
             UpdateGear(carController.gears[carController.currentGearIndex].name,
                        carController.gears[carController.currentGearIndex].isReverse);
 
-            UpdateRPM(carController.rpm);
         }
 
         if (carAI != null)
         {
+            UpdateLap();
             UpdateCarState(carAI.currentState);
 
             if (carAI.inTrafficZone && carAI.currentTrafficLight != null)
@@ -76,10 +76,10 @@ public class UIController : MonoBehaviour
         }
     }
 
-    public void UpdateRPM(float rpm)
+    public void UpdateLap()
     {
-        if (rpmText != null)
-            rpmText.text = "RPM: " + Mathf.RoundToInt(rpm);
+        if (lapText != null && carAI != null)
+            lapText.text = "Lap: " + carAI.lapCount;
     }
 
     public void UpdateCarState(CarAI.CarState state)
