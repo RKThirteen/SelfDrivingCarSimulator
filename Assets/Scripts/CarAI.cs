@@ -37,6 +37,7 @@ public class CarAI : MonoBehaviour
     public float recalculateDistance = 5f;
     private List<Transform> waypoints = new List<Transform>();
     private int currentWaypoint = 0;
+    private float pathRecalcTimer = 0f;
 
     [Header("AI Parameters")]
     public float desiredSpeed = 12f;
@@ -54,18 +55,18 @@ public class CarAI : MonoBehaviour
 
     [Header("Predictive Avoidance")]
 
-    public float reactionTime    = 0.7f;  // seconds until brake onset
+    public float reactionTime    = 1.2f;  // seconds until brake onset
     public float maxDeceleration = 8f;    // m/s², how hard you can brake
-    public float safetyBuffer    = 5f;    // metres extra beyond stoppingDistance
+    public float safetyBuffer    = 7f;    // metres extra beyond stoppingDistance
     public float predictiveRange = 15f;
     public float slowdownThreshold = 10f; // how far before obstacle we start slowing down
     public float minThrottle = 0.3f;
 
     [Header("Obstacle Avoidance")]
-    public float[] rayAngles = { -30f, 0f, 30f };
-    public float rayRange = 12f;
+    public float[] rayAngles = { -45f, -30f, -15f, 0f, 15f, 30f, 45f };
+    public float rayRange = 15f;
     public LayerMask obstacleMask;
-    public float avoidanceForce = 2f;
+    public float avoidanceForce = 4f;
     private Vector3 avoidanceVector;
 
     public TrafficLight currentTrafficLight = null;
@@ -294,19 +295,35 @@ public class CarAI : MonoBehaviour
 
     void UpdateAvoidance()
     {
-        
+        // Timer pentru recalculare traseu
+        pathRecalcTimer += Time.deltaTime;
+        if (pathRecalcTimer >= 2f)
+        {
+            CalculatePath();
+            pathRecalcTimer = 0f;
+            Debug.Log("Recalculating path due to obstacle");
+        }
+
         // Do we even need to avoid?
         float closestDist, lookAhead;
         bool hasObs = PredictObstacle(out closestDist, out lookAhead);
         if (!hasObs)
         {
-            // Path is clear → replan & go back to Drive
+            pathRecalcTimer = 0f; // Reset timer
             CalculatePath();
             TransitionToState(CarState.Drive);
             return;
         }
 
-        Vector3 avoidance = CalculateAvoidance();  
+        // Recalculează traseul la fiecare 2 secunde
+        if (pathRecalcTimer >= 2f)
+        {
+            CalculatePath();
+            pathRecalcTimer = 0f;
+            Debug.Log("Recalculating path due to obstacle");
+        }
+
+        Vector3 avoidance = CalculateAvoidance();
 
         // Build a 0→1 intensity: 0 when closestDist==lookAhead, 1 when closestDist==0
         float steerIntensity = Mathf.Clamp01(1f - (closestDist / lookAhead));
@@ -316,22 +333,22 @@ public class CarAI : MonoBehaviour
         controller.SetSteer(Mathf.Clamp(steerInput, -1f, 1f));
         controller.SetThrottle(Mathf.Lerp(currentThrottle, 0f, Time.deltaTime / throttleSmoothTime));
 
-        // Your dynamic throttle/brake
+        // Dynamic throttle/brake
         float stopD = lookAhead;
         if (closestDist < stopD * 0.5f)
         {
-            currentBrake    = Mathf.Lerp(currentBrake, 1.0f, Time.deltaTime / brakeSmoothTime);
-            currentThrottle = 0.2f;
+            currentBrake = Mathf.Lerp(currentBrake, 1.0f, Time.deltaTime / brakeSmoothTime);
+            currentThrottle = 0f; // Mai agresiv la frânare
         }
         else
         {
-            currentThrottle = Mathf.Lerp(currentThrottle, 0.6f, Time.deltaTime / throttleSmoothTime);
-            currentBrake = Mathf.Lerp(currentBrake, 0.2f, Time.deltaTime / brakeSmoothTime);
+            currentThrottle = Mathf.Lerp(currentThrottle, 0.4f, Time.deltaTime / throttleSmoothTime);
+            currentBrake = Mathf.Lerp(currentBrake, 0.4f, Time.deltaTime / brakeSmoothTime);
         }
         controller.SetThrottle(currentThrottle);
         controller.SetBrake(currentBrake);
 
-        // stuck‐check → Recover
+        // Verificare blocaj
         if (DetectObstacle())
         {
             float speed = rb.velocity.magnitude;
@@ -517,39 +534,34 @@ public class CarAI : MonoBehaviour
     Vector3 CalculateAvoidance()
     {
         Vector3 totalForce = Vector3.zero;
-        Vector3 origin     = transform.position + Vector3.up * 0.5f;
+        Vector3 origin = transform.position + Vector3.up * 0.5f;
 
         foreach (float angle in rayAngles)
         {
-            // 1) cast the ray
             Quaternion rot = Quaternion.AngleAxis(angle, transform.up);
-            Vector3 dir    = rot * transform.forward;
+            Vector3 dir = rot * transform.forward;
             if (Physics.Raycast(origin, dir, out RaycastHit hit, rayRange, obstacleMask))
             {
-                // 2) world-space vector to the obstacle
                 Vector3 toObs = (hit.point - transform.position).normalized;
-
-                // 3) lateral direction: cross(up, toObs) gives a right-hand perp
                 Vector3 avoidDir = Vector3.Cross(Vector3.up, toObs).normalized;
 
-                // 4) if the dot of avoidDir with local right is negative, flip it 
-                //    so we always steer away, not toward
                 if (Vector3.Dot(transform.InverseTransformDirection(avoidDir), Vector3.right) < 0f)
                     avoidDir = -avoidDir;
 
-                // 5) weight by proximity (closer => stronger)
                 float strength = avoidanceForce * (1f - (hit.distance / rayRange));
                 totalForce += avoidDir * strength;
 
-                // ✱ Debug: draw the chosen avoidance vector in green
-                Debug.DrawRay(hit.point, avoidDir * 2f, Color.green, 0.1f);
+                // Mută logica suplimentară în interiorul loop-ului
+                if (hit.distance < rayRange * 0.3f)
+                {
+                    float pushForce = avoidanceForce * 2 * (1 - (hit.distance / rayRange));
+                    totalForce += avoidDir * pushForce;
+                }
             }
         }
 
-        // if we have no obstacles at all, just return zero
         if (totalForce == Vector3.zero) return Vector3.zero;
 
-        // 6) convert to local space and normalize for steering
         Vector3 localForce = transform.InverseTransformDirection(totalForce);
         return localForce.normalized;
     }
