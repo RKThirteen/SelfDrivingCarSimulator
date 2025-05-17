@@ -155,6 +155,27 @@ public class CarAI : MonoBehaviour
         if (bestGearIndex != controller.currentGearIndex)
             StartCoroutine(controller.GearShiftDelay(bestGearIndex));
     }
+    
+    private void EnforceSpeedLimit()
+    {
+        float speed = rb.velocity.magnitude;
+        if (speed > desiredSpeed)
+        {
+            Debug.Log($"Enforcing speed limit: {speed} > {desiredSpeed} for state {currentState}");
+            // no throttle, light brake proportional to overshoot
+            float overshoot = speed - desiredSpeed;
+            float brakeForce = Mathf.Clamp01(overshoot / desiredSpeed);
+            UpdateSpeedControl(0f, brakeForce);
+        }
+    }
+
+    private void UpdateSpeedControl(float targetThrottle, float targetBrake)
+    {
+        currentThrottle = Mathf.Lerp(currentThrottle, targetThrottle, Time.deltaTime / throttleSmoothTime);
+        currentBrake = Mathf.Lerp(currentBrake, targetBrake, Time.deltaTime / brakeSmoothTime);
+        controller.SetThrottle(currentThrottle);
+        controller.SetBrake(currentBrake);
+    }
 
     void UpdateDriving()
     {
@@ -163,8 +184,11 @@ public class CarAI : MonoBehaviour
             TransitionToState(CarState.Pathfind);
             return;
         }
-
+        EnforceSpeedLimit();
+        if (rb.velocity.magnitude > desiredSpeed) return;
         AutoShift();
+
+        
 
         if (currentWaypoint < waypoints.Count - 1)
         {
@@ -233,16 +257,9 @@ public class CarAI : MonoBehaviour
         if (distanceToWaypoint < (desiredSpeed * brakeDistanceMultiplier))
             brakeInput = Mathf.Clamp01(1 - (distanceToWaypoint / (desiredSpeed * brakeDistanceMultiplier)));
 
-        float targetThrottle = throttleInput * (1 - brakeInput);
-        float targetBrake = brakeInput;
-
-
-        currentThrottle = Mathf.Lerp(currentThrottle, targetThrottle, Time.deltaTime / throttleSmoothTime);
-        currentBrake = Mathf.Lerp(currentBrake, targetBrake, Time.deltaTime / brakeSmoothTime);
+        UpdateSpeedControl(throttleInput * (1 - brakeInput), brakeInput);
 
         controller.SetSteer(Mathf.Clamp(adjustedSteer / maxSteerAngle, -1f, 1f));
-        controller.SetThrottle(currentThrottle);
-        controller.SetBrake(currentBrake);
 
         if (distanceToWaypoint < waypointRadius)
         {
@@ -293,9 +310,84 @@ public class CarAI : MonoBehaviour
         return false;
     }
 
+    // void UpdateAvoidance()
+    // {
+    //     // Timer pentru recalculare traseu
+    //     // pathRecalcTimer += Time.deltaTime;
+    //     // if (pathRecalcTimer >= 2f)
+    //     // {
+    //     //     CalculatePath();
+    //     //     pathRecalcTimer = 0f;
+    //     //     Debug.Log("Recalculating path due to obstacle");
+    //     // }
+    //     // Do we even need to avoid?
+    //     float closestDist, lookAhead;
+    //     bool hasObs = PredictObstacle(out closestDist, out lookAhead);
+    //     avoidanceTimer += Time.deltaTime;
+    //     // only consider exit after 0.5s
+    //     if (avoidanceTimer >= 0.5f && !hasObs)
+    //     {
+    //         avoidanceTimer = 0;
+    //         CalculatePath();
+    //         TransitionToState(CarState.Drive);
+    //     }
+
+    //     // Recalculează traseul la fiecare 2 secunde
+    //     if (pathRecalcTimer >= 2f)
+    //     {
+    //         CalculatePath();
+    //         pathRecalcTimer = 0f;
+    //         Debug.Log("Recalculating path due to obstacle");
+    //     }
+
+    //     Vector3 avoidance = CalculateAvoidance();
+
+    //     // Build a 0→1 intensity: 0 when closestDist==lookAhead, 1 when closestDist==0
+    //     float steerIntensity = Mathf.Clamp01(1f - (closestDist / lookAhead));
+
+    //     // Combine direction × intensity → final steer
+    //     float steerInput = avoidance.x * steerIntensity;
+    //     controller.SetSteer(Mathf.Clamp(steerInput, -1f, 1f));
+    //     controller.SetThrottle(Mathf.Lerp(currentThrottle, 0f, Time.deltaTime / throttleSmoothTime));
+
+    //     // Dynamic throttle/brake
+    //     float stopD = lookAhead;
+    //     if (closestDist < stopD * 0.5f)
+    //     {
+    //         currentBrake = Mathf.Lerp(currentBrake, 1.0f, Time.deltaTime / brakeSmoothTime);
+    //         currentThrottle = 0f; // Mai agresiv la frânare
+    //     }
+    //     else
+    //     {
+    //         currentThrottle = Mathf.Lerp(currentThrottle, 0.4f, Time.deltaTime / throttleSmoothTime);
+    //         currentBrake = Mathf.Lerp(currentBrake, 0.4f, Time.deltaTime / brakeSmoothTime);
+    //     }
+    //     controller.SetThrottle(currentThrottle);
+    //     controller.SetBrake(currentBrake);
+
+    //     // Verificare blocaj
+    //     if (DetectObstacle())
+    //     {
+    //         float speed = rb.velocity.magnitude;
+    //         float angleToWaypoint = Vector3.Angle(
+    //             transform.forward,
+    //             (waypoints[currentWaypoint].position - transform.position).normalized);
+    //         if (speed < 1f && angleToWaypoint > 45f)
+    //         {
+    //             TransitionToState(CarState.Recover);
+    //             return;
+    //         }
+    //     }
+    // }
+    float avoidanceTimer = 0f;
     void UpdateAvoidance()
     {
-        // Timer pentru recalculare traseu
+        EnforceSpeedLimit();
+        if (rb.velocity.magnitude > desiredSpeed)
+            return;
+        // 1) Recalculate path every 2 seconds
+        AutoShift();
+        
         pathRecalcTimer += Time.deltaTime;
         if (pathRecalcTimer >= 2f)
         {
@@ -304,64 +396,51 @@ public class CarAI : MonoBehaviour
             Debug.Log("Recalculating path due to obstacle");
         }
 
-        // Do we even need to avoid?
-        float closestDist, lookAhead;
-        bool hasObs = PredictObstacle(out closestDist, out lookAhead);
-        if (!hasObs)
+        // 2) Predict upcoming obstacle
+        float obstacleDist, lookAhead;
+        bool hasObstacle = PredictObstacle(out obstacleDist, out lookAhead);
+        avoidanceTimer += Time.deltaTime;
+         if (avoidanceTimer >= 0.2f && !hasObstacle)
         {
-            pathRecalcTimer = 0f; // Reset timer
+            avoidanceTimer = 0;
             CalculatePath();
             TransitionToState(CarState.Drive);
-            return;
         }
 
-        // Recalculează traseul la fiecare 2 secunde
-        if (pathRecalcTimer >= 2f)
-        {
-            CalculatePath();
-            pathRecalcTimer = 0f;
-            Debug.Log("Recalculating path due to obstacle");
-        }
-
+        // 3) Steering: steer away from the obstacle
         Vector3 avoidance = CalculateAvoidance();
+        controller.SetSteer(Mathf.Clamp(avoidance.x, -1f, 1f));
 
-        // Build a 0→1 intensity: 0 when closestDist==lookAhead, 1 when closestDist==0
-        float steerIntensity = Mathf.Clamp01(1f - (closestDist / lookAhead));
+        // 4) Speed control
+        float speed = rb.velocity.magnitude;
 
-        // Combine direction × intensity → final steer
-        float steerInput = avoidance.x * steerIntensity;
-        controller.SetSteer(Mathf.Clamp(steerInput, -1f, 1f));
-        controller.SetThrottle(Mathf.Lerp(currentThrottle, 0f, Time.deltaTime / throttleSmoothTime));
+        // — base throttle to maintain desiredSpeed
+        float baseThrottle = Mathf.Clamp01(1f - (speed / desiredSpeed));
 
-        // Dynamic throttle/brake
-        float stopD = lookAhead;
-        if (closestDist < stopD * 0.5f)
+        // — scale it down by how close we are to the obstacle
+        float slowdownFactor = hasObstacle 
+            ? Mathf.Clamp01(obstacleDist / slowdownThreshold) 
+            : 1f;
+        float throttleTarget = Mathf.Min(
+            Mathf.Lerp(minThrottle, baseThrottle, slowdownFactor),
+            baseThrottle
+        );
+
+        // — brake only if really close
+        float brakeTarget = (hasObstacle && obstacleDist < slowdownThreshold * 0.5f) ? 1f : 0f;
+
+        UpdateSpeedControl(throttleTarget, brakeTarget);
+
+        // 5) Exit avoidance once the obstacle is safely past (with hysteresis)
+        if (!hasObstacle || obstacleDist > slowdownThreshold * 1.2f)
         {
-            currentBrake = Mathf.Lerp(currentBrake, 1.0f, Time.deltaTime / brakeSmoothTime);
-            currentThrottle = 0f; // Mai agresiv la frânare
-        }
-        else
-        {
-            currentThrottle = Mathf.Lerp(currentThrottle, 0.4f, Time.deltaTime / throttleSmoothTime);
-            currentBrake = Mathf.Lerp(currentBrake, 0.4f, Time.deltaTime / brakeSmoothTime);
-        }
-        controller.SetThrottle(currentThrottle);
-        controller.SetBrake(currentBrake);
-
-        // Verificare blocaj
-        if (DetectObstacle())
-        {
-            float speed = rb.velocity.magnitude;
-            float angleToWaypoint = Vector3.Angle(
-                transform.forward,
-                (waypoints[currentWaypoint].position - transform.position).normalized);
-            if (speed < 1f && angleToWaypoint > 45f)
-            {
-                TransitionToState(CarState.Recover);
-                return;
-            }
+            pathRecalcTimer = 0f;
+            CalculatePath();
+            TransitionToState(CarState.Drive);
         }
     }
+
+
 
 
     void UpdateStop()
@@ -369,7 +448,7 @@ public class CarAI : MonoBehaviour
         controller.SetThrottle(0f);
         controller.SetBrake(1f);
 
-        if (CheckClearPath())
+        if (CheckClearPath() && currentTrafficLight!=null && currentTrafficLight.currentState != LightState.Red)
             TransitionToState(CarState.Drive);
     }
 
@@ -484,6 +563,7 @@ public class CarAI : MonoBehaviour
     {
         lookAhead = GetStoppingDistance();
         obstacleDistance = Mathf.Infinity;
+        lookAhead = Mathf.Min(lookAhead, predictiveRange);
 
         Vector3 origin = transform.position + Vector3.up * 0.5f;
         foreach (float angle in rayAngles)
@@ -534,34 +614,49 @@ public class CarAI : MonoBehaviour
     Vector3 CalculateAvoidance()
     {
         Vector3 totalForce = Vector3.zero;
-        Vector3 origin = transform.position + Vector3.up * 0.5f;
+        Vector3 origin     = transform.position + Vector3.up * 0.5f;
 
         foreach (float angle in rayAngles)
         {
             Quaternion rot = Quaternion.AngleAxis(angle, transform.up);
-            Vector3 dir = rot * transform.forward;
+            Vector3 dir    = rot * transform.forward;
+
             if (Physics.Raycast(origin, dir, out RaycastHit hit, rayRange, obstacleMask))
             {
-                Vector3 toObs = (hit.point - transform.position).normalized;
-                Vector3 avoidDir = Vector3.Cross(Vector3.up, toObs).normalized;
+                Vector3 avoidDir;
 
-                if (Vector3.Dot(transform.InverseTransformDirection(avoidDir), Vector3.right) < 0f)
-                    avoidDir = -avoidDir;
+                if (Mathf.Approximately(angle, 0f))
+                {
+                    // For the direct-forward ray, use the obstacle's surface normal
+                    avoidDir = Vector3.ProjectOnPlane(hit.normal, Vector3.up).normalized;
+                }
+                else
+                {
+                    // Your existing lateral-avoidance logic
+                    Vector3 toObs   = (hit.point - transform.position).normalized;
+                    avoidDir        = Vector3.Cross(Vector3.up, toObs).normalized;
+                    // Ensure it's pointing to the car's local right
+                    if (Vector3.Dot(transform.InverseTransformDirection(avoidDir), Vector3.right) < 0f)
+                        avoidDir = -avoidDir;
+                }
 
+                // Scale by proximity
                 float strength = avoidanceForce * (1f - (hit.distance / rayRange));
-                totalForce += avoidDir * strength;
+                totalForce    += avoidDir * strength;
 
-                // Mută logica suplimentară în interiorul loop-ului
+                // Extra push when very close
                 if (hit.distance < rayRange * 0.3f)
                 {
-                    float pushForce = avoidanceForce * 2 * (1 - (hit.distance / rayRange));
-                    totalForce += avoidDir * pushForce;
+                    float pushForce = avoidanceForce * 2f * (1f - (hit.distance / rayRange));
+                    totalForce    += avoidDir * pushForce;
                 }
             }
         }
 
-        if (totalForce == Vector3.zero) return Vector3.zero;
+        if (totalForce == Vector3.zero)
+            return Vector3.zero;
 
+        // Convert world-space force into local-steer vector
         Vector3 localForce = transform.InverseTransformDirection(totalForce);
         return localForce.normalized;
     }
@@ -731,6 +826,7 @@ public class CarAI : MonoBehaviour
                 break;
 
             case CarState.AvoidObstacle:
+                avoidanceTimer = 0f;    
                 avoidanceVector = CalculateAvoidance();
                 break;
 
