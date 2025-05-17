@@ -161,7 +161,7 @@ public class CarAI : MonoBehaviour
         float speed = rb.velocity.magnitude;
         if (speed > desiredSpeed)
         {
-            Debug.Log($"Enforcing speed limit: {speed} > {desiredSpeed} for state {currentState}");
+            Debug.Log($"Enforcing speed limit: {desiredSpeed} for state {currentState}");
             // no throttle, light brake proportional to overshoot
             float overshoot = speed - desiredSpeed;
             float brakeForce = Mathf.Clamp01(overshoot / desiredSpeed);
@@ -310,97 +310,20 @@ public class CarAI : MonoBehaviour
         return false;
     }
 
-    // void UpdateAvoidance()
-    // {
-    //     // Timer pentru recalculare traseu
-    //     // pathRecalcTimer += Time.deltaTime;
-    //     // if (pathRecalcTimer >= 2f)
-    //     // {
-    //     //     CalculatePath();
-    //     //     pathRecalcTimer = 0f;
-    //     //     Debug.Log("Recalculating path due to obstacle");
-    //     // }
-    //     // Do we even need to avoid?
-    //     float closestDist, lookAhead;
-    //     bool hasObs = PredictObstacle(out closestDist, out lookAhead);
-    //     avoidanceTimer += Time.deltaTime;
-    //     // only consider exit after 0.5s
-    //     if (avoidanceTimer >= 0.5f && !hasObs)
-    //     {
-    //         avoidanceTimer = 0;
-    //         CalculatePath();
-    //         TransitionToState(CarState.Drive);
-    //     }
-
-    //     // Recalculează traseul la fiecare 2 secunde
-    //     if (pathRecalcTimer >= 2f)
-    //     {
-    //         CalculatePath();
-    //         pathRecalcTimer = 0f;
-    //         Debug.Log("Recalculating path due to obstacle");
-    //     }
-
-    //     Vector3 avoidance = CalculateAvoidance();
-
-    //     // Build a 0→1 intensity: 0 when closestDist==lookAhead, 1 when closestDist==0
-    //     float steerIntensity = Mathf.Clamp01(1f - (closestDist / lookAhead));
-
-    //     // Combine direction × intensity → final steer
-    //     float steerInput = avoidance.x * steerIntensity;
-    //     controller.SetSteer(Mathf.Clamp(steerInput, -1f, 1f));
-    //     controller.SetThrottle(Mathf.Lerp(currentThrottle, 0f, Time.deltaTime / throttleSmoothTime));
-
-    //     // Dynamic throttle/brake
-    //     float stopD = lookAhead;
-    //     if (closestDist < stopD * 0.5f)
-    //     {
-    //         currentBrake = Mathf.Lerp(currentBrake, 1.0f, Time.deltaTime / brakeSmoothTime);
-    //         currentThrottle = 0f; // Mai agresiv la frânare
-    //     }
-    //     else
-    //     {
-    //         currentThrottle = Mathf.Lerp(currentThrottle, 0.4f, Time.deltaTime / throttleSmoothTime);
-    //         currentBrake = Mathf.Lerp(currentBrake, 0.4f, Time.deltaTime / brakeSmoothTime);
-    //     }
-    //     controller.SetThrottle(currentThrottle);
-    //     controller.SetBrake(currentBrake);
-
-    //     // Verificare blocaj
-    //     if (DetectObstacle())
-    //     {
-    //         float speed = rb.velocity.magnitude;
-    //         float angleToWaypoint = Vector3.Angle(
-    //             transform.forward,
-    //             (waypoints[currentWaypoint].position - transform.position).normalized);
-    //         if (speed < 1f && angleToWaypoint > 45f)
-    //         {
-    //             TransitionToState(CarState.Recover);
-    //             return;
-    //         }
-    //     }
-    // }
     float avoidanceTimer = 0f;
     void UpdateAvoidance()
     {
+
         EnforceSpeedLimit();
         if (rb.velocity.magnitude > desiredSpeed)
             return;
-        // 1) Recalculate path every 2 seconds
         AutoShift();
-        
-        pathRecalcTimer += Time.deltaTime;
-        if (pathRecalcTimer >= 2f)
-        {
-            CalculatePath();
-            pathRecalcTimer = 0f;
-            Debug.Log("Recalculating path due to obstacle");
-        }
 
         // 2) Predict upcoming obstacle
         float obstacleDist, lookAhead;
         bool hasObstacle = PredictObstacle(out obstacleDist, out lookAhead);
         avoidanceTimer += Time.deltaTime;
-         if (avoidanceTimer >= 0.2f && !hasObstacle)
+         if (avoidanceTimer >= 0.3f && !hasObstacle)
         {
             avoidanceTimer = 0;
             CalculatePath();
@@ -413,6 +336,11 @@ public class CarAI : MonoBehaviour
 
         // 4) Speed control
         float speed = rb.velocity.magnitude;
+
+        if (speed < 1f)
+        {
+            TransitionToState(CarState.Recover);
+        }
 
         // — base throttle to maintain desiredSpeed
         float baseThrottle = Mathf.Clamp01(1f - (speed / desiredSpeed));
@@ -431,10 +359,10 @@ public class CarAI : MonoBehaviour
 
         UpdateSpeedControl(throttleTarget, brakeTarget);
 
-        // 5) Exit avoidance once the obstacle is safely past (with hysteresis)
         if (!hasObstacle || obstacleDist > slowdownThreshold * 1.2f)
         {
             pathRecalcTimer = 0f;
+            avoidanceTimer = 0;
             CalculatePath();
             TransitionToState(CarState.Drive);
         }
@@ -454,99 +382,30 @@ public class CarAI : MonoBehaviour
 
     void EnterRecover()
     {
-        recoverPhase     = RecoverPhase.BackOff;
-        reverseTimer     = 0.5f;  // you’ll back just 1s or until distance reached
-        recoverStartPos  = transform.position;
-
-        controller.currentGearIndex = 0; // reverse
-        controller.SetBrake(0f);
-        controller.SetThrottle(1f);
-        reversing = true;
+        recoverStartPos = transform.position;
+        reverseTimer    = 2f;        // or whatever back-off duration you like
+        reversing       = true;
+        // no need to set steer/throttle here; UpdateReverseRecovery handles it
     }
 
     void UpdateReverseRecovery()
     {
-        // pick your current target‐position
-        Vector3 pivotTarget = (waypoints.Count > 0 && currentWaypoint < waypoints.Count)
-       ? waypoints[waypoints.Count - 1].position
-       : (targetSelector.CurrentTarget != null 
-           ? targetSelector.CurrentTarget.position 
-           : transform.position + transform.forward);
+        // 1) Ensure we’re in reverse gear and steering straight
+        controller.currentGearIndex = 0;
+        controller.SetSteer(0f);
+        controller.SetBrake(0f);
+        controller.SetThrottle(1f);
 
-        // for distance & angle checks
-        Vector3 frontPos = transform.position + transform.forward * frontOffset;
-        float currentFrontDist = Vector3.Distance(frontPos, pivotTarget);
-        Vector3 pivotDir = (pivotTarget - transform.position).normalized;
-        float currentAngle = Vector3.SignedAngle(transform.forward, pivotDir, Vector3.up);
-        Debug.Log($"[Recover] Angle to node: {currentAngle:F1}°, pathing towards node {currentWaypoint + 1}/{waypoints.Count}");
+        // 2) Count down timer and distance backed
+        reverseTimer -= Time.deltaTime;
+        float backed = Vector3.Distance(transform.position, recoverStartPos);
 
-        switch (recoverPhase)
+        // 3) Once we’ve backed far enough or time’s up, stop and re-path
+        if (backed >= reverseBackoffDistance || reverseTimer <= 0f)
         {
-            case RecoverPhase.BackOff:
-                // reverse straight until distance or timer
-                reverseTimer -= Time.deltaTime;
-                float backed = Vector3.Distance(transform.position, recoverStartPos);
-
-                controller.SetSteer(0f);
-                controller.SetThrottle(1f);
-                controller.SetBrake(0f);
-
-                if (backed >= reverseBackoffDistance || reverseTimer <= 0f)
-                {
-                    // move directly into pivot
-                    recoverPhase = RecoverPhase.Pivot;
-                    lastFrontDist = currentFrontDist;
-                    lastAngle = currentAngle;
-                }
-                break;
-
-            case RecoverPhase.Pivot:
-                // keep reverse gear
-                controller.currentGearIndex = 0;
-
-                // compute base steer
-                float steerInput = Mathf.Clamp(currentAngle / maxSteerAngle, -1f, 1f);
-
-                // flip if our angular error to the node is getting larger
-                float angleDelta = Mathf.Abs(currentAngle) - Mathf.Abs(lastAngle);
-                if (angleDelta > angleDeadzone)
-                    steerInput = -steerInput;
-                lastAngle = currentAngle;
-
-                controller.SetSteer(steerInput);
-
-                // then apply reverse throttle only until roughly aligned
-                if (Mathf.Abs(currentAngle) > startReverseAngle)
-                {
-                    float angleFactor = Mathf.Clamp01(Mathf.Abs(currentAngle) / 180f);
-                    float maxPivotVel = reverseSpeed / 3.6f * 0.8f;
-                    float pivotThrottle = Mathf.Lerp(0.1f, maxPivotVel, angleFactor);
-                    controller.SetThrottle(pivotThrottle);
-                }
-                else
-                {
-                    controller.SetThrottle(0f);
-                }
-                controller.SetBrake(0f);
-
-                // clamp reverse speed
-                float maxBackVel = reverseSpeed / 3.6f;
-                float backVel = Vector3.Dot(rb.velocity, -transform.forward);
-                if (backVel > maxBackVel)
-                    rb.velocity = -transform.forward * maxBackVel;
-
-                // done pivoting?
-                if (Mathf.Abs(currentAngle) < finishAngleThreshold)
-                {
-                    reversing = false;
-                    controller.SetBrake(0f);
-                    controller.currentGearIndex = 1; // first forward gear
-
-                    // recalc full path and go drive
-                    CalculatePath();
-                    TransitionToState(CarState.Drive);
-                }
-                break;
+            controller.SetThrottle(0f);
+            CalculatePath();
+            TransitionToState(CarState.Pathfind);
         }
     }
 
@@ -614,12 +473,12 @@ public class CarAI : MonoBehaviour
     Vector3 CalculateAvoidance()
     {
         Vector3 totalForce = Vector3.zero;
-        Vector3 origin     = transform.position + Vector3.up * 0.5f;
+        Vector3 origin = transform.position + Vector3.up * 0.5f;
 
         foreach (float angle in rayAngles)
         {
             Quaternion rot = Quaternion.AngleAxis(angle, transform.up);
-            Vector3 dir    = rot * transform.forward;
+            Vector3 dir = rot * transform.forward;
 
             if (Physics.Raycast(origin, dir, out RaycastHit hit, rayRange, obstacleMask))
             {
@@ -632,17 +491,13 @@ public class CarAI : MonoBehaviour
                 }
                 else
                 {
-                    // Your existing lateral-avoidance logic
-                    Vector3 toObs   = (hit.point - transform.position).normalized;
-                    avoidDir        = Vector3.Cross(Vector3.up, toObs).normalized;
-                    // Ensure it's pointing to the car's local right
-                    if (Vector3.Dot(transform.InverseTransformDirection(avoidDir), Vector3.right) < 0f)
-                        avoidDir = -avoidDir;
+                    Vector3 toObs = (hit.point - transform.position).normalized;
+                    avoidDir = Vector3.Cross(Vector3.up, toObs).normalized;
                 }
 
                 // Scale by proximity
                 float strength = avoidanceForce * (1f - (hit.distance / rayRange));
-                totalForce    += avoidDir * strength;
+                totalForce += avoidDir * strength;
 
                 // Extra push when very close
                 if (hit.distance < rayRange * 0.3f)
@@ -663,7 +518,10 @@ public class CarAI : MonoBehaviour
     // Adaugă aceste metode în CarAI.cs
     private void RetracePath(Node startNode, Node endNode)
     {
-        Debug.Log("Retracing path from " + startNode.gridX + "," + startNode.gridY + " to " + endNode.gridX + "," + endNode.gridY);
+        Debug.Log("Retracing path from " +
+            startNode.gridX + "," + startNode.gridY +
+            " to " + endNode.gridX + "," + endNode.gridY);
+
         if (startNode == null || endNode == null)
         {
             Debug.LogWarning("Start or end node is null.");
@@ -675,31 +533,13 @@ public class CarAI : MonoBehaviour
             return;
         }
 
-        // Asigurare că lista e creată
-        if (waypoints != null)
-        {
-            foreach (Transform wp in waypoints)
-            {
-                if (wp != null) Destroy(wp.gameObject);
-            }
-            waypoints.Clear();
-        }
-        else
-        {
-            waypoints = new List<Transform>();
-        }
-        foreach (Transform wp in waypoints)
-        {
-            if (wp != null) Destroy(wp.gameObject);
-        }
         List<Node> path = new List<Node>();
         Node currentNode = endNode;
-
         while (currentNode != startNode)
         {
             path.Add(currentNode);
             currentNode = currentNode.parent;
-            if (currentNode == null) // Prevenire buclă infinită
+            if (currentNode == null)
             {
                 Debug.LogError("Path retrace failed - null parent!");
                 return;
@@ -707,14 +547,35 @@ public class CarAI : MonoBehaviour
         }
         path.Reverse();
 
-        // Distruge waypoint-urile vechi
+        int firstValid = 0;
+        for (int i = 0; i < path.Count; i++)
+        {
+            Vector3 toNode = path[i].worldPosition - transform.position;
+            if (Vector3.Dot(transform.forward, toNode.normalized) > 0f)
+            {
+                firstValid = i;
+                break;
+            }
+        }
+        if (firstValid > 0)
+            path.RemoveRange(0, firstValid);
+
+        if (path.Count == 0)
+        {
+            Debug.Log("Reached target (no forward nodes). Switching to next.");
+            if (targetSelector != null)
+                targetSelector.NextTarget();
+            TransitionToState(CarState.Pathfind);
+            return;
+        }
+
         foreach (Transform wp in waypoints)
         {
-            if (wp != null) Destroy(wp.gameObject);
+            if (wp != null)
+                Destroy(wp.gameObject);
         }
         waypoints.Clear();
 
-        // Creează waypoint-uri noi
         foreach (Node node in path)
         {
             GameObject wp = new GameObject("Waypoint");
@@ -722,9 +583,11 @@ public class CarAI : MonoBehaviour
             waypoints.Add(wp.transform);
             Debug.DrawRay(node.worldPosition, Vector3.up * 2, Color.green, 5f);
         }
+
         currentWaypoint = 0;
         TransitionToState(CarState.Drive);
     }
+
 
     private int GetDistance(Node a, Node b)
     {

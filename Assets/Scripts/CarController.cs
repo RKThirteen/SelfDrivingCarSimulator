@@ -148,17 +148,12 @@ public class CarController : MonoBehaviour
     void FixedUpdate()
     {
         
-        // for (int i = 0; i < wheelColliders.Length; i++)
-        // {
-        //     bool grounded = wheelColliders[i].GetGroundHit(out WheelHit hit);
-        //     Debug.Log($"Wheel {i}: Grounded = {grounded}, Hit force = {hit.force}");
-        // }
         acceleration = (rb.velocity - lastVelocity) / Time.fixedDeltaTime;
         lastVelocity = rb.velocity;
 
         bool groundedRearLeft = wheelColliders[2].GetGroundHit(out _);
         bool groundedRearRight = wheelColliders[3].GetGroundHit(out _);
-        Debug.Log($"Rear wheels grounded: {groundedRearLeft && groundedRearRight}");
+        //Debug.Log($"Rear wheels grounded: {groundedRearLeft && groundedRearRight}");
 
         ApplyEngine();
         ApplyBrake();
@@ -210,7 +205,7 @@ public class CarController : MonoBehaviour
             wheelColliders[2].motorTorque = 0f;
             wheelColliders[3].motorTorque = 0f;
         }
-        Debug.Log($"Gear: {gear.name}, RPM: {avgWheelRPM}, Velocity: {rb.velocity.magnitude}, AllowTorque: {allowTorque}");
+        //Debug.Log($"Gear: {gear.name}, RPM: {avgWheelRPM}, Velocity: {rb.velocity.magnitude}, AllowTorque: {allowTorque}");
     }
 
     private void ApplyBrake(float brakeInput = 0f)
